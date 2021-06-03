@@ -76,6 +76,7 @@ class MetasploitModule < Msf::Auxiliary
 
   def run_host(ip)
     checkcode = Exploit::CheckCode::Unknown
+    checkcode = Exploit::CheckCode::Unknown
     details = {}
 
     begin
@@ -168,7 +169,7 @@ class MetasploitModule < Msf::Auxiliary
     rescue ::Rex::Proto::SMB::Exceptions::LoginError
       print_error("An SMB Login Error occurred while connecting to the IPC$ tree.")
     rescue ::Exception => e
-      vprint_error("#{e.class}: #{e.message}")
+      print_error("#{e.class}: #{e.message}")
     ensure
       disconnect
     end
