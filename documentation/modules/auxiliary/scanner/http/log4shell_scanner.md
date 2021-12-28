@@ -66,6 +66,11 @@ applications.
 ### LDAP_TIMEOUT
 Time in seconds to wait to receive LDAP connections.
 
+### LEAK_PARAMS
+^-separated list of additional params to leak, for example the following would leak the USER and PATH environment
+variables: `${env:USER}^${env:PATH}`. See the [Log4j Lookups](https://logging.apache.org/log4j/2.x/manual/lookups.html)
+wiki page for more information on available parameters.
+
 ## Scenarios
 
 ### Struts2

