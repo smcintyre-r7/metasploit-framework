@@ -26,6 +26,18 @@ class MetasploitModule < Msf::Auxiliary
         ],
         'DisclosureDate' => '2022-05-19',
         'License' => MSF_LICENSE,
+        'Actions' => [
+          ['ALL', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['COMPUTERS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['CUSTOM', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['EXCHANGE', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['GROUPS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ORGROLES', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ORGUNITS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['PEOPLE', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['USERS', { 'Description' => 'Dump all objects containing any objectClass field.' }]
+        ],
+        'DefaultAction' => 'ALL',
         'DefaultOptions' => {
           'SSL' => false
         },
@@ -40,8 +52,7 @@ class MetasploitModule < Msf::Auxiliary
     register_options([
       Opt::RPORT(389), # Set to 636 for SSL/TLS
       OptString.new('BASE_DN', [false, 'LDAP base DN if you already have it']),
-      OptString.new('LDAPQUERY', [false, 'Query to run against the target LDAP server']),
-      OptEnum.new('PREDEFINEDQUERY', [false, 'Predefined query to run', nil, ['ALL', 'USERS', 'PEOPLE', 'GROUPS', 'ORGUNITS', 'ORGROLES', 'COMPUTERS', 'EXCHANGE'] ])
+      OptString.new('LDAPQUERY', [false, 'Query to run against the target LDAP server'])
     ])
   end
 
@@ -58,47 +69,49 @@ class MetasploitModule < Msf::Auxiliary
   def run
     entries = []
 
-    unless datastore['LDAPQUERY'] || datastore['PREDEFINEDQUERY']
-      print_error('LDAPQUERY or PREDEFINEDQUERY must be specified!')
-      return
-    end
+    begin
+      ldap_connect do |ldap|
+        if (@base_dn = datastore['BASE_DN'])
+          print_status("User-specified base DN: #{@base_dn}")
+        else
+          print_status('Discovering base DN automatically')
 
-    ldap_connect do |ldap|
-      if (@base_dn = datastore['BASE_DN'])
-        print_status("User-specified base DN: #{@base_dn}")
-      else
-        print_status('Discovering base DN automatically')
-
-        unless (@base_dn = discover_base_dn(ldap))
-          print_warning('Falling back on default base DN dc=vsphere,dc=local')
+          unless (@base_dn = discover_base_dn(ldap))
+            print_warning("Couldn't discover base DN!")
+          end
         end
-      end
 
-      if datastore['LDAPQUERY']
-        print_status("Querying using #{datastore['LDAPQUERY']} on #{peer}")
-        # Perform custom query
-        filter = Net::LDAP::Filter.construct(datastore['LDAPQUERY'])
-        perform_ldap_query(ldap, filter, entries)
+        case action.name
+        when 'CUSTOM'
+          unless datastore['LDAPQUERY']
+            print_error('When using the CUSTOM action one must specify the custom query via LDAPQUERY!')
+            return
+          end
+          print_status("Querying using #{datastore['LDAPQUERY']} on #{peer}")
+          # Perform custom query
+          filter = Net::LDAP::Filter.construct(datastore['LDAPQUERY'])
+          perform_ldap_query(ldap, filter, entries)
 
-      elsif datastore['PREDEFINEDQUERY']
         # Many of the following queries came from http://www.ldapexplorer.com/en/manual/109050000-famous-filters.htm. All credit goes to them for these popular queries.
-        case datastore['PREDEFINEDQUERY']
         when 'ALL'
           filter = Net::LDAP::Filter.construct('(objectClass=*)') # Get ALL of the objects that have any objectClass associated with them. Can return a lot of info.
           perform_ldap_query(ldap, filter, entries)
 
-        when 'USERS'
-          filter = Net::LDAP::Filter.construct('(|(objectClass=inetOrgPerson)(objectClass=user))') # Common LDAP user query.
+        when 'COMPUTERS'
+          filter = Net::LDAP::Filter.construct('(&(objectCategory=Computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))') # Find domain controllers
           perform_ldap_query(ldap, filter, entries)
 
-          filter = Net::LDAP::Filter.construct('(sAMAccountType=805306368)') # Common AD User query by account type.
+          filter = Net::LDAP::Filter.construct('(objectCategory=Computer)') # Find computers
           perform_ldap_query(ldap, filter, entries)
 
-          filter = Net::LDAP::Filter.construct('(objectClass=posixAccount)') # Query for Linux accounts.
+        when 'EXCHANGE'
+          filter = Net::LDAP::Filter.construct('(&(objectClass=msExchExchangeServer)(!(objectClass=msExchExchangeServerPolicy)))') # Find Exchange Servers
           perform_ldap_query(ldap, filter, entries)
-
-        when 'PEOPLE'
-          filter = Net::LDAP::Filter.construct('(objectClass=organizationalPerson)') # Find people within an organization by Person entries.
+          filter = Net::LDAP::Filter.construct('(mailNickname=*)') # Find Exchange Recipients
+          perform_ldap_query(ldap, filter, entries)
+          # filter = Net::LDAP::Filter.construct("(&(msExchHideFromAddressLists=TRUE)(!objectClass=publicFolder))") # Find Exchange Recipients - hidden
+          # perform_ldap_query(ldap, filter, entries)
+          filter = Net::LDAP::Filter.construct('(proxyAddresses=FAX:*)') # Find Exchange Recipients - with FAX address
           perform_ldap_query(ldap, filter, entries)
 
         when 'GROUPS'
@@ -119,24 +132,24 @@ class MetasploitModule < Msf::Auxiliary
           filter = Net::LDAP::Filter.construct('(objectClass=organizationalRole)') # Find OUs aka Organizational Units
           perform_ldap_query(ldap, filter, entries)
 
-        when 'COMPUTERS'
-          filter = Net::LDAP::Filter.construct('(&(objectCategory=Computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))') # Find domain controllers
+        when 'PEOPLE'
+          filter = Net::LDAP::Filter.construct('(objectClass=organizationalPerson)') # Find people within an organization by Person entries.
           perform_ldap_query(ldap, filter, entries)
 
-          filter = Net::LDAP::Filter.construct('(objectCategory=Computer)') # Find computers
+        when 'USERS'
+          filter = Net::LDAP::Filter.construct('(|(objectClass=inetOrgPerson)(objectClass=user))') # Common LDAP user query.
           perform_ldap_query(ldap, filter, entries)
 
-        when 'EXCHANGE'
-          filter = Net::LDAP::Filter.construct('(&(objectClass=msExchExchangeServer)(!(objectClass=msExchExchangeServerPolicy)))') # Find Exchange Servers
+          filter = Net::LDAP::Filter.construct('(sAMAccountType=805306368)') # Common AD User query by account type.
           perform_ldap_query(ldap, filter, entries)
-          filter = Net::LDAP::Filter.construct('(mailNickname=*)') # Find Exchange Recipients
-          perform_ldap_query(ldap, filter, entries)
-          # filter = Net::LDAP::Filter.construct("(&(msExchHideFromAddressLists=TRUE)(!objectClass=publicFolder))") # Find Exchange Recipients - hidden
-          # perform_ldap_query(ldap, filter, entries)
-          filter = Net::LDAP::Filter.construct('(proxyAddresses=FAX:*)') # Find Exchange Recipients - with FAX address
+
+          filter = Net::LDAP::Filter.construct('(objectClass=posixAccount)') # Query for Linux accounts.
           perform_ldap_query(ldap, filter, entries)
         end
       end
+    rescue Rex::ConnectionTimeout => e
+      print_error("Could not query #{datastore['RHOST']}! Error was: #{e.message}")
+      return
     end
 
     p entries # XXX probably still need to improve output formatting here.
