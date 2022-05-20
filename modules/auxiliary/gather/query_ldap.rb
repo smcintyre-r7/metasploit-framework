@@ -27,17 +27,17 @@ class MetasploitModule < Msf::Auxiliary
         'DisclosureDate' => '2022-05-19',
         'License' => MSF_LICENSE,
         'Actions' => [
-          ['ALL', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['COMPUTERS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['CUSTOM', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['EXCHANGE', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['GROUPS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ORGROLES', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ORGUNITS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['PEOPLE', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['USERS', { 'Description' => 'Dump all objects containing any objectClass field.' }]
+          ['ENUM_ALL_OBJECTCLASS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ENUM_COMPUTERS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['CUSTOM_QUERY', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ENUM_EXCHANGE', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ENUM_GROUPS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ENUM_ORGROLES', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ENUM_ORGUNITS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ENUM_PEOPLE', { 'Description' => 'Dump all objects containing any objectClass field.' }],
+          ['ENUM_USERS', { 'Description' => 'Dump all objects containing any objectClass field.' }]
         ],
-        'DefaultAction' => 'ALL',
+        'DefaultAction' => 'ENUM_ALL_OBJECTCLASS',
         'DefaultOptions' => {
           'SSL' => false
         },
@@ -82,9 +82,9 @@ class MetasploitModule < Msf::Auxiliary
         end
 
         case action.name
-        when 'CUSTOM'
+        when 'CUSTOM_QUERY'
           unless datastore['LDAPQUERY']
-            print_error('When using the CUSTOM action one must specify the custom query via LDAPQUERY!')
+            print_error('When using the CUSTOM_QUERY action one must specify the custom query via LDAPQUERY!')
             return
           end
           print_status("Querying using #{datastore['LDAPQUERY']} on #{peer}")
@@ -93,18 +93,18 @@ class MetasploitModule < Msf::Auxiliary
           perform_ldap_query(ldap, filter, entries)
 
         # Many of the following queries came from http://www.ldapexplorer.com/en/manual/109050000-famous-filters.htm. All credit goes to them for these popular queries.
-        when 'ALL'
+        when 'ENUM_ALL_OBJECTCLASS'
           filter = Net::LDAP::Filter.construct('(objectClass=*)') # Get ALL of the objects that have any objectClass associated with them. Can return a lot of info.
           perform_ldap_query(ldap, filter, entries)
 
-        when 'COMPUTERS'
+        when 'ENUM_COMPUTERS'
           filter = Net::LDAP::Filter.construct('(&(objectCategory=Computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))') # Find domain controllers
           perform_ldap_query(ldap, filter, entries)
 
           filter = Net::LDAP::Filter.construct('(objectCategory=Computer)') # Find computers
           perform_ldap_query(ldap, filter, entries)
 
-        when 'EXCHANGE'
+        when 'ENUM_EXCHANGE'
           filter = Net::LDAP::Filter.construct('(&(objectClass=msExchExchangeServer)(!(objectClass=msExchExchangeServerPolicy)))') # Find Exchange Servers
           perform_ldap_query(ldap, filter, entries)
           filter = Net::LDAP::Filter.construct('(mailNickname=*)') # Find Exchange Recipients
@@ -114,7 +114,7 @@ class MetasploitModule < Msf::Auxiliary
           filter = Net::LDAP::Filter.construct('(proxyAddresses=FAX:*)') # Find Exchange Recipients - with FAX address
           perform_ldap_query(ldap, filter, entries)
 
-        when 'GROUPS'
+        when 'ENUM_GROUPS'
           filter = Net::LDAP::Filter.construct('(|(objectClass=group)(objectClass=groupOfNames))') # Standard LDAP groups query.
           perform_ldap_query(ldap, filter, entries)
 
@@ -124,19 +124,19 @@ class MetasploitModule < Msf::Auxiliary
           filter = Net::LDAP::Filter.construct('(objectClass=posixGroup)') # Find Linux groups
           perform_ldap_query(ldap, filter, entries)
 
-        when 'ORGUNITS'
+        when 'ENUM_ORGUNITS'
           filter = Net::LDAP::Filter.construct('(objectClass=organizationalUnit)') # Find OUs aka Organizational Units
           perform_ldap_query(ldap, filter, entries)
 
-        when 'ORGROLES'
+        when 'ENUM_ORGROLES'
           filter = Net::LDAP::Filter.construct('(objectClass=organizationalRole)') # Find OUs aka Organizational Units
           perform_ldap_query(ldap, filter, entries)
 
-        when 'PEOPLE'
+        when 'ENUM_PEOPLE'
           filter = Net::LDAP::Filter.construct('(objectClass=organizationalPerson)') # Find people within an organization by Person entries.
           perform_ldap_query(ldap, filter, entries)
 
-        when 'USERS'
+        when 'ENUM_USERS'
           filter = Net::LDAP::Filter.construct('(|(objectClass=inetOrgPerson)(objectClass=user))') # Common LDAP user query.
           perform_ldap_query(ldap, filter, entries)
 
