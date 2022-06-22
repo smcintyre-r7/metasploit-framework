@@ -28,14 +28,17 @@ class MetasploitModule < Msf::Auxiliary
         'License' => MSF_LICENSE,
         'Actions' => [
           ['ENUM_ALL_OBJECTCLASS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ENUM_COMPUTERS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['CUSTOM_QUERY', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ENUM_EXCHANGE', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ENUM_GROUPS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ENUM_ORGROLES', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ENUM_ORGUNITS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ENUM_PEOPLE', { 'Description' => 'Dump all objects containing any objectClass field.' }],
-          ['ENUM_USERS', { 'Description' => 'Dump all objects containing any objectClass field.' }]
+          ['ENUM_ALL_OBJECTCATEGORY', { 'Description' => 'Dump all objects containing any objectCategory field.' }],
+          ['ENUM_COMPUTERS', { 'Description' => 'Dump all objects containing an objectCategory of Computer.' }],
+          ['CUSTOM_QUERY', { 'Description' => 'Execute a custom LDAP query specified by LDAPQUERY.' }],
+          ['ENUM_DOMAIN_CONTROLERS', { 'Description' => 'Dump all known domain controllers.' }],
+          ['ENUM_EXCHANGE_SERVERS', { 'Description' => 'Dump info about all known Exchange servers.' }],
+          ['ENUM_EXCHANGE_RECIPIENTS', { 'Description' => 'Dump info about all known Exchange recipients.' }],
+          ['ENUM_GROUPS', { 'Description' => 'Dump info about all known groups in the LDAP environment.' }],
+          ['ENUM_ORGROLES', { 'Description' => 'Dump info about all known organizational roles in the LDAP environment.' }],
+          ['ENUM_ORGUNITS', { 'Description' => 'Dump info about all known organization units in the LDAP environment.' }],
+          ['ENUM_PEOPLE', { 'Description' => 'Dump info about all organizationalPerson objects.' }],
+          ['ENUM_USERS', { 'Description' => 'Dump info about all known users in the LDAP environement.' }]
         ],
         'DefaultAction' => 'ENUM_ALL_OBJECTCLASS',
         'DefaultOptions' => {
@@ -58,10 +61,9 @@ class MetasploitModule < Msf::Auxiliary
 
   def perform_ldap_query(ldap, filter, entries)
     returned_entries = ldap.search(base: @base_dn, filter: filter)
-    p returned_entries
     if returned_entries.nil? || returned_entries.empty?
-      print_error("No results found for #{filter}")
-    else
+      print_error("No results found for #{filter}. You may require additional authentication, or the information may not exist on the target.")
+    elseSs
       entries << [filter.to_s, returned_entries]
     end
   end
@@ -97,31 +99,31 @@ class MetasploitModule < Msf::Auxiliary
           filter = Net::LDAP::Filter.construct('(objectClass=*)') # Get ALL of the objects that have any objectClass associated with them. Can return a lot of info.
           perform_ldap_query(ldap, filter, entries)
 
-        when 'ENUM_COMPUTERS'
-          filter = Net::LDAP::Filter.construct('(&(objectCategory=Computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))') # Find domain controllers
+        when 'ENUM_ALL_OBJECTCATEGORY'
+          filter = Net::LDAP::Filter.construct('(objectCategory=*)') # Get ALL of the objects that have any objectCategory associated with them. Can return a lot of info.
           perform_ldap_query(ldap, filter, entries)
 
+        when 'ENUM_COMPUTERS'
           filter = Net::LDAP::Filter.construct('(objectCategory=Computer)') # Find computers
           perform_ldap_query(ldap, filter, entries)
 
-        when 'ENUM_EXCHANGE'
+        when 'ENUM_DOMAIN_CONTROLERS'
+          filter = Net::LDAP::Filter.construct('(&(objectCategory=Computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))') # Find domain controllers
+          perform_ldap_query(ldap, filter, entries)
+
+        when 'ENUM_EXCHANGE_SERVERS'
           filter = Net::LDAP::Filter.construct('(&(objectClass=msExchExchangeServer)(!(objectClass=msExchExchangeServerPolicy)))') # Find Exchange Servers
           perform_ldap_query(ldap, filter, entries)
-          filter = Net::LDAP::Filter.construct('(mailNickname=*)') # Find Exchange Recipients
-          perform_ldap_query(ldap, filter, entries)
-          # filter = Net::LDAP::Filter.construct("(&(msExchHideFromAddressLists=TRUE)(!objectClass=publicFolder))") # Find Exchange Recipients - hidden
-          # perform_ldap_query(ldap, filter, entries)
-          filter = Net::LDAP::Filter.construct('(proxyAddresses=FAX:*)') # Find Exchange Recipients - with FAX address
+
+        when 'ENUM_EXCHANGE_RECIPIENTS'
+          # Find Exchange Recipients with or without fax addresses.
+          filter = Net::LDAP::Filter.construct('(|(mailNickname=*)(proxyAddresses=FAX:*))')
           perform_ldap_query(ldap, filter, entries)
 
         when 'ENUM_GROUPS'
-          filter = Net::LDAP::Filter.construct('(|(objectClass=group)(objectClass=groupOfNames))') # Standard LDAP groups query.
-          perform_ldap_query(ldap, filter, entries)
-
-          filter = Net::LDAP::Filter.construct('(groupType:1.2.840.113556.1.4.803:=2147483648)') # Find security groups within an AD environment.
-          perform_ldap_query(ldap, filter, entries)
-
-          filter = Net::LDAP::Filter.construct('(objectClass=posixGroup)') # Find Linux groups
+          # Standard LDAP groups query, followed by trying to find AD security groups, then trying to find Linux groups.
+          # Filters combined to remove duplicates.
+          filter = Net::LDAP::Filter.construct('(|(objectClass=group)(objectClass=groupOfNames)(groupType:1.2.840.113556.1.4.803:=2147483648)(objectClass=posixGroup))')
           perform_ldap_query(ldap, filter, entries)
 
         when 'ENUM_ORGUNITS'
@@ -135,15 +137,13 @@ class MetasploitModule < Msf::Auxiliary
         when 'ENUM_PEOPLE'
           filter = Net::LDAP::Filter.construct('(objectClass=organizationalPerson)') # Find people within an organization by Person entries.
           perform_ldap_query(ldap, filter, entries)
-
+bcc
         when 'ENUM_USERS'
-          filter = Net::LDAP::Filter.construct('(|(objectClass=inetOrgPerson)(objectClass=user))') # Common LDAP user query.
-          perform_ldap_query(ldap, filter, entries)
-
-          filter = Net::LDAP::Filter.construct('(sAMAccountType=805306368)') # Common AD User query by account type.
-          perform_ldap_query(ldap, filter, entries)
-
-          filter = Net::LDAP::Filter.construct('(objectClass=posixAccount)') # Query for Linux accounts.
+          # Common LDAP user query, followed by a query for AD User records by account type.
+          # Finally, query for Linux accounts by objectClass.
+          #
+          # Doing this all in one query also prevents duplicate entires across multiple queries.
+          filter = Net::LDAP::Filter.construct('(|(objectClass=inetOrgPerson)(objectClass=user)(sAMAccountType=805306368)(objectClass=posixAccount)(objectClass=GsAccount)(objectClass=GsSIPUser))')
           perform_ldap_query(ldap, filter, entries)
         end
       end
