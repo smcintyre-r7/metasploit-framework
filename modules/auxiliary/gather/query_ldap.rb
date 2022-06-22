@@ -13,11 +13,15 @@ class MetasploitModule < Msf::Auxiliary
         info,
         'Name' => 'LDAP Query and Enumeration Module',
         'Description' => %q{
-          This module allows users to query an LDAP server using either a custom LDAP query, or a set of LDAP queries under a specific category.
-          The custom query is controlled via the LDAPQUERY parameter, or if one wants to run a set of predefined queries they can use the PREDEFINEDQUERY
-          option to specify a set of predefined queries to run.
+          This module allows users to query an LDAP server using either a custom LDAP query, or
+          a set of LDAP queries under a specific category. The custom query is controlled via
+          the LDAPQUERY parameter, which will be used when the ACTION value is set to CUSTOM_QUERY.
 
-          All results will be returned to the user as plain text.
+          Alternatively one can run one of several predefined queries by setting ACTION to the
+          appropriate value.
+
+          All results will be returned to the user in table format, with || as the delimeter
+          seperating multiple items within one column.
         },
         'Author' => [
           'Grant Willcox', # Module
