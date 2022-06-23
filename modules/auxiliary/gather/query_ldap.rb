@@ -59,7 +59,7 @@ class MetasploitModule < Msf::Auxiliary
     register_options([
       Opt::RPORT(389), # Set to 636 for SSL/TLS
       OptString.new('BASE_DN', [false, 'LDAP base DN if you already have it']),
-      OptString.new('LDAPQUERY', [false, 'Query to run against the target LDAP server'])
+      OptString.new('LDAPQUERY', [false, 'Query to run against the target LDAP server'], conditions: %w[ ACTION == CUSTOM_QUERY ])
     ])
   end
 
@@ -67,9 +67,9 @@ class MetasploitModule < Msf::Auxiliary
     returned_entries = ldap.search(base: @base_dn, filter: filter)
     if returned_entries.nil? || returned_entries.empty?
       print_error("No results found for #{filter}. You may require additional authentication, or the information may not exist on the target.")
-      [nil, nil]
+      nil
     else
-      [filter.to_s, returned_entries]
+      returned_entries
     end
   end
 
@@ -90,8 +90,7 @@ class MetasploitModule < Msf::Auxiliary
         case action.name
         when 'CUSTOM_QUERY'
           unless datastore['LDAPQUERY']
-            print_error('When using the CUSTOM_QUERY action one must specify the custom query via LDAPQUERY!')
-            return
+            fail_with(Failure::BadConfig, 'When using the CUSTOM_QUERY action one must specify the custom query via LDAPQUERY!')
           end
           print_status("Querying using #{datastore['LDAPQUERY']} on #{peer}")
           # Perform custom query
@@ -150,15 +149,15 @@ class MetasploitModule < Msf::Auxiliary
           entries = perform_ldap_query(ldap, filter)
         end
       end
-    rescue Rex::ConnectionTimeout => e
+    rescue Rex::ConnectionTimeout, Net::LDAP::Error => e
       print_error("Could not query #{datastore['RHOST']}! Error was: #{e.message}")
       return
     end
 
-    return if entries[1].nil?
+    return if entries.nil?
 
     columns = []
-    entries[1].each do |entry|
+    entries.each do |entry|
       entry.attribute_names.each do |attribute|
         columns << attribute.to_s
       end
@@ -169,7 +168,7 @@ class MetasploitModule < Msf::Auxiliary
       'Indent' => 1,
       'Columns' => columns
     )
-    entries[1].each do |entry|
+    entries.each do |entry|
       data = []
       columns.each do |col|
         col = col.to_sym
@@ -182,7 +181,5 @@ class MetasploitModule < Msf::Auxiliary
       tbl << data
     end
     print_status(tbl.to_s)
-  rescue Net::LDAP::Error => e
-    print_error("#{e.class}: #{e.message}")
   end
 end
