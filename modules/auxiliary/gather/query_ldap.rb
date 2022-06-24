@@ -33,6 +33,7 @@ class MetasploitModule < Msf::Auxiliary
         'Actions' => [
           ['ENUM_ALL_OBJECTCLASS', { 'Description' => 'Dump all objects containing any objectClass field.' }],
           ['ENUM_ALL_OBJECTCATEGORY', { 'Description' => 'Dump all objects containing any objectCategory field.' }],
+          ['ENUM_ACCOUNTS', { 'Description' => 'Dump info about all known user accounts in the domain.' }],
           ['ENUM_COMPUTERS', { 'Description' => 'Dump all objects containing an objectCategory of Computer.' }],
           ['CUSTOM_QUERY', { 'Description' => 'Execute a custom LDAP query specified by LDAPQUERY.' }],
           ['ENUM_DOMAIN_CONTROLERS', { 'Description' => 'Dump all known domain controllers.' }],
@@ -41,8 +42,6 @@ class MetasploitModule < Msf::Auxiliary
           ['ENUM_GROUPS', { 'Description' => 'Dump info about all known groups in the LDAP environment.' }],
           ['ENUM_ORGROLES', { 'Description' => 'Dump info about all known organizational roles in the LDAP environment.' }],
           ['ENUM_ORGUNITS', { 'Description' => 'Dump info about all known organization units in the LDAP environment.' }],
-          ['ENUM_PEOPLE', { 'Description' => 'Dump info about all organizationalPerson objects.' }],
-          ['ENUM_USERS', { 'Description' => 'Dump info about all known users in the LDAP environement.' }]
         ],
         'DefaultAction' => 'ENUM_ALL_OBJECTCLASS',
         'DefaultOptions' => {
@@ -59,14 +58,24 @@ class MetasploitModule < Msf::Auxiliary
     register_options([
       Opt::RPORT(389), # Set to 636 for SSL/TLS
       OptString.new('BASE_DN', [false, 'LDAP base DN if you already have it']),
-      OptString.new('LDAPQUERY', [false, 'Query to run against the target LDAP server'], conditions: %w[ ACTION == CUSTOM_QUERY ])
+      OptString.new('LDAPQUERY', [false, 'Query to run against the target LDAP server'], conditions: %w[ACTION == CUSTOM_QUERY])
     ])
   end
 
   def perform_ldap_query(ldap, filter)
     returned_entries = ldap.search(base: @base_dn, filter: filter)
+    query_result = ldap.as_json['result']['ldap_result']
+    case query_result['resultCode']
+    when 0
+      vprint_good('Successfully queried LDAP server!')
+    when 1
+      print_error("Could not perform query #{filter}. Its likely the query requires authentication.")
+      print_error(query_result['errorMessage'])
+    else
+      print_error("Query #{filter} failed with error: #{query_result['errorMessage']}")
+    end
     if returned_entries.nil? || returned_entries.empty?
-      print_error("No results found for #{filter}. You may require additional authentication, or the information may not exist on the target.")
+      print_error("No results found for #{filter}.")
       nil
     else
       returned_entries
@@ -75,28 +84,29 @@ class MetasploitModule < Msf::Auxiliary
 
   def run
     entries = nil
+    columns = []
     begin
       ldap_connect do |ldap|
-        bind_result = ldap.as_json["result"]["ldap_result"]
+        bind_result = ldap.as_json['result']['ldap_result']
 
         # Codes taken from https://ldap.com/ldap-result-code-reference-core-ldapv3-result-codes
-        case bind_result["resultCode"]
+        case bind_result['resultCode']
         when 0
-          print_good("Successfully bound to the LDAP server!")
+          print_good('Successfully bound to the LDAP server!')
         when 1
-          fail_with(Failure::NoAccess, "An operational error occurred, perhaps due to lack of authorization. The error was: #{bind_result["errorMessage"]}")
+          fail_with(Failure::NoAccess, "An operational error occurred, perhaps due to lack of authorization. The error was: #{bind_result['errorMessage']}")
         when 7
-          fail_with(Failure::NoTarget, "Target does not support the simple authentication mechanism!")
+          fail_with(Failure::NoTarget, 'Target does not support the simple authentication mechanism!')
         when 8
-          fail_with(Failure::NoTarget, "Server requires a stronger form of authentication than we can provide! The error was: #{bind_result["errorMessage"]}")
+          fail_with(Failure::NoTarget, "Server requires a stronger form of authentication than we can provide! The error was: #{bind_result['errorMessage']}")
         when 14
-          fail_with(Failure::NoTarget, "Server requires additional information to complete the bind. Error was: #{bind_result["errorMessage"]}")
+          fail_with(Failure::NoTarget, "Server requires additional information to complete the bind. Error was: #{bind_result['errorMessage']}")
         when 48
           fail_with(Failure::NoAccess, "Target doesn't support the requested authentication type we sent. Try binding to the same user without a password, or providing credentials if you were doing anonymous authentication.")
         when 49
-          fail_with(Failure::NoAccess, "Invalid credentials provided!")
+          fail_with(Failure::NoAccess, 'Invalid credentials provided!')
         else
-          fail_with(Failure::Unknown, "Unknown error occurred whilst binding: #{bind_result["errorMessage"]}")
+          fail_with(Failure::Unknown, "Unknown error occurred whilst binding: #{bind_result['errorMessage']}")
         end
         if (@base_dn = datastore['BASE_DN'])
           print_status("User-specified base DN: #{@base_dn}")
@@ -122,68 +132,64 @@ class MetasploitModule < Msf::Auxiliary
         when 'ENUM_ALL_OBJECTCLASS'
           filter = Net::LDAP::Filter.construct('(objectClass=*)') # Get ALL of the objects that have any objectClass associated with them. Can return a lot of info.
           entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'objectClass']
+
         when 'ENUM_ALL_OBJECTCATEGORY'
           filter = Net::LDAP::Filter.construct('(objectCategory=*)') # Get ALL of the objects that have any objectCategory associated with them. Can return a lot of info.
           entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'objectCategory']
+
+        when 'ENUM_ACCOUNTS'
+          # Find AD accounts and organizational people.
+          filter = Net::LDAP::Filter.construct('(|(objectClass=organizationalPerson)(sAMAccountType=805306368))')
+          entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'name', 'displayname', 'givenname', 'samaccountname', 'useraccountcontrol']
 
         when 'ENUM_COMPUTERS'
           filter = Net::LDAP::Filter.construct('(objectCategory=Computer)') # Find computers
           entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenname', 'name', 'operatingsystemversion']
 
         when 'ENUM_DOMAIN_CONTROLERS'
           filter = Net::LDAP::Filter.construct('(&(objectCategory=Computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))') # Find domain controllers
           entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenname', 'name', 'operatingsystemversion']
 
         when 'ENUM_EXCHANGE_SERVERS'
           filter = Net::LDAP::Filter.construct('(&(objectClass=msExchExchangeServer)(!(objectClass=msExchExchangeServerPolicy)))') # Find Exchange Servers
           entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenname', 'name', 'operatingsystemversion']
 
         when 'ENUM_EXCHANGE_RECIPIENTS'
           # Find Exchange Recipients with or without fax addresses.
           filter = Net::LDAP::Filter.construct('(|(mailNickname=*)(proxyAddresses=FAX:*))')
           entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'mailNickname', 'proxyAddresses', 'name']
 
         when 'ENUM_GROUPS'
           # Standard LDAP groups query, followed by trying to find AD security groups, then trying to find Linux groups.
           # Filters combined to remove duplicates.
           filter = Net::LDAP::Filter.construct('(|(objectClass=group)(objectClass=groupOfNames)(groupType:1.2.840.113556.1.4.803:=2147483648)(objectClass=posixGroup))')
           entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'name', 'grouptype', 'memberof']
 
         when 'ENUM_ORGUNITS'
           filter = Net::LDAP::Filter.construct('(objectClass=organizationalUnit)') # Find OUs aka Organizational Units
           entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'displayName', 'name', 'description']
 
         when 'ENUM_ORGROLES'
           filter = Net::LDAP::Filter.construct('(objectClass=organizationalRole)') # Find OUs aka Organizational Units
           entries = perform_ldap_query(ldap, filter)
-
-        when 'ENUM_PEOPLE'
-          filter = Net::LDAP::Filter.construct('(objectClass=organizationalPerson)') # Find people within an organization by Person entries.
-          entries = perform_ldap_query(ldap, filter)
-
-        when 'ENUM_USERS'
-          # Common LDAP user query, followed by a query for AD User records by account type.
-          # Finally, query for Linux accounts by objectClass.
-          #
-          # Doing this all in one query also prevents duplicate entires across multiple queries.
-          filter = Net::LDAP::Filter.construct('(|(objectClass=inetOrgPerson)(objectClass=user)(sAMAccountType=805306368)(objectClass=posixAccount)(objectClass=GsAccount)(objectClass=GsSIPUser))')
-          entries = perform_ldap_query(ldap, filter)
+          columns = ['dn', 'displayName', 'name', 'description']
         end
       end
     rescue Rex::ConnectionTimeout, Net::LDAP::Error => e
       print_error("Could not query #{datastore['RHOST']}! Error was: #{e.message}")
       return
     end
-
     return if entries.nil?
 
-    columns = []
-    entries.each do |entry|
-      entry.attribute_names.each do |attribute|
-        columns << attribute.to_s
-      end
-    end
-    columns.uniq!
     tbl = Rex::Text::Table.new(
       'Header' => "#{action.name} Dump of #{peer}",
       'Indent' => 1,
