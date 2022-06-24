@@ -77,6 +77,27 @@ class MetasploitModule < Msf::Auxiliary
     entries = nil
     begin
       ldap_connect do |ldap|
+        bind_result = ldap.as_json["result"]["ldap_result"]
+
+        # Codes taken from https://ldap.com/ldap-result-code-reference-core-ldapv3-result-codes
+        case bind_result["resultCode"]
+        when 0
+          print_good("Successfully bound to the LDAP server!")
+        when 1
+          fail_with(Failure::NoAccess, "An operational error occurred, perhaps due to lack of authorization. The error was: #{bind_result["errorMessage"]}")
+        when 7
+          fail_with(Failure::NoTarget, "Target does not support the simple authentication mechanism!")
+        when 8
+          fail_with(Failure::NoTarget, "Server requires a stronger form of authentication than we can provide! The error was: #{bind_result["errorMessage"]}")
+        when 14
+          fail_with(Failure::NoTarget, "Server requires additional information to complete the bind. Error was: #{bind_result["errorMessage"]}")
+        when 48
+          fail_with(Failure::NoAccess, "Target doesn't support the requested authentication type we sent. Try binding to the same user without a password, or providing credentials if you were doing anonymous authentication.")
+        when 49
+          fail_with(Failure::NoAccess, "Invalid credentials provided!")
+        else
+          fail_with(Failure::Unknown, "Unknown error occurred whilst binding: #{bind_result["errorMessage"]}")
+        end
         if (@base_dn = datastore['BASE_DN'])
           print_status("User-specified base DN: #{@base_dn}")
         else
@@ -174,9 +195,9 @@ class MetasploitModule < Msf::Auxiliary
         col = col.to_sym
         if entry[col].nil? || entry[col].empty? || entry[col][0].empty?
           data << nil
-        else
-          data << entry[col].join(' || ')
+          next
         end
+        data << Rex::Text.to_hex_ascii(entry[col].join(' || '))
       end
       tbl << data
     end
