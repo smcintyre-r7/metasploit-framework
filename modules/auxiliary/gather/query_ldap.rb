@@ -132,7 +132,7 @@ class MetasploitModule < Msf::Auxiliary
         when 'ENUM_ALL_OBJECTCLASS'
           filter = Net::LDAP::Filter.construct('(objectClass=*)') # Get ALL of the objects that have any objectClass associated with them. Can return a lot of info.
           entries = perform_ldap_query(ldap, filter)
-          columns = ['dn', 'objectClass']
+          columns = ['dn', 'objectClass', 'objectGUID']
 
         when 'ENUM_ALL_OBJECTCATEGORY'
           filter = Net::LDAP::Filter.construct('(objectCategory=*)') # Get ALL of the objects that have any objectCategory associated with them. Can return a lot of info.
@@ -201,9 +201,9 @@ class MetasploitModule < Msf::Auxiliary
         col = col.to_sym
         if entry[col].nil? || entry[col].empty? || entry[col][0].empty?
           data << nil
-          next
+        else
+          data << entry[col].join(' || ')
         end
-        data << Rex::Text.to_hex_ascii(entry[col].join(' || '))
       end
       tbl << data
     end
