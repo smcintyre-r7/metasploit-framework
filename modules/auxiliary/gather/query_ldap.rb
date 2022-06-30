@@ -6,6 +6,7 @@
 class MetasploitModule < Msf::Auxiliary
 
   include Msf::Exploit::Remote::LDAP
+  require 'json'
 
   def initialize(info = {})
     super(
@@ -14,14 +15,15 @@ class MetasploitModule < Msf::Auxiliary
         'Name' => 'LDAP Query and Enumeration Module',
         'Description' => %q{
           This module allows users to query an LDAP server using either a custom LDAP query, or
-          a set of LDAP queries under a specific category. The custom query is controlled via
-          the LDAPQUERY parameter, which will be used when the ACTION value is set to CUSTOM_QUERY.
+          a set of LDAP queries under a specific category. Users can also specify a JSON file containing
+          custom queries to be executed using the RUN_QUERY_FILE action. If this action is specified,
+          then QUERYFILE must point to the location of this JSON file on disk.
 
           Alternatively one can run one of several predefined queries by setting ACTION to the
           appropriate value.
 
-          All results will be returned to the user in table format, with || as the delimeter
-          seperating multiple items within one column.
+          All results will be returned to the user in table format, with || as the delimiter
+          separating multiple items within one column.
         },
         'Author' => [
           'Grant Willcox', # Module
@@ -35,7 +37,7 @@ class MetasploitModule < Msf::Auxiliary
           ['ENUM_ALL_OBJECTCATEGORY', { 'Description' => 'Dump all objects containing any objectCategory field.' }],
           ['ENUM_ACCOUNTS', { 'Description' => 'Dump info about all known user accounts in the domain.' }],
           ['ENUM_COMPUTERS', { 'Description' => 'Dump all objects containing an objectCategory of Computer.' }],
-          ['CUSTOM_QUERY', { 'Description' => 'Execute a custom LDAP query specified by LDAPQUERY.' }],
+          ['RUN_QUERY_FILE', { 'Description' => 'Execute a custom set of LDAP queries from the JSON file specified by QUERYFILE.' }],
           ['ENUM_DOMAIN_CONTROLERS', { 'Description' => 'Dump all known domain controllers.' }],
           ['ENUM_EXCHANGE_SERVERS', { 'Description' => 'Dump info about all known Exchange servers.' }],
           ['ENUM_EXCHANGE_RECIPIENTS', { 'Description' => 'Dump info about all known Exchange recipients.' }],
@@ -58,7 +60,7 @@ class MetasploitModule < Msf::Auxiliary
     register_options([
       Opt::RPORT(389), # Set to 636 for SSL/TLS
       OptString.new('BASE_DN', [false, 'LDAP base DN if you already have it']),
-      OptString.new('LDAPQUERY', [false, 'Query to run against the target LDAP server'], conditions: %w[ACTION == CUSTOM_QUERY])
+      OptString.new('QUERYFILE', [false, 'JSON file to load and run queries from'], conditions: %w[ACTION == RUN_QUERY_FILE])
     ])
   end
 
@@ -119,20 +121,74 @@ class MetasploitModule < Msf::Auxiliary
         end
 
         case action.name
-        when 'CUSTOM_QUERY'
-          unless datastore['LDAPQUERY']
-            fail_with(Failure::BadConfig, 'When using the CUSTOM_QUERY action one must specify the custom query via LDAPQUERY!')
+        when 'RUN_QUERY_FILE'
+          unless datastore['QUERYFILE']
+            fail_with(Failure::BadConfig, 'When using the RUN_QUERY_FILE action one must specify the JSON file contain the custom queries via QUERYFILE!')
           end
-          print_status("Querying using #{datastore['LDAPQUERY']} on #{peer}")
-          # Perform custom query
-          filter = Net::LDAP::Filter.construct(datastore['LDAPQUERY'])
-          entries = perform_ldap_query(ldap, filter)
+          print_status("Loading queries from #{datastore['QUERYFILE']}...")
+          begin
+            file_raw = File.read(datastore['QUERYFILE'])
+          rescue => e
+            print_error("Couldn't open #{datastore['QUERYFILE']}, error was: #{e}")
+            return
+          end
+
+          begin
+            parsed_file = JSON.parse(file_raw)
+          rescue => e
+            print_error("Couldn't parse #{datastore['QUERYFILE']}, error was: #{e}")
+            return
+          end
+
+          unless parsed_file['queries']&.class == Array && parsed_file['queries'].length > 0
+            print_error("No queries supplied in #{datastore['QUERYFILE']}!")
+          end
+
+          for query in parsed_file['queries']
+            unless query['name'] && query['filter'] && query['columns']
+              print_error("Each query in the query file must at least contain a 'name', 'filter' and 'columns' attribute!")
+              return
+            end
+            columns = query['columns']
+            if columns.nil? || columns.length < 1
+              print_warning("At least one column needs to be specified per query in the query file for entries to work!")
+              return
+            end
+            filter = Net::LDAP::Filter.construct(query['filter'])
+            print_status("Running #{query['name']}...")
+            entries = perform_ldap_query(ldap, filter)
+
+            if entries.nil?
+              print_warning("Query #{query['filter']} from #{query['name']} didn't return any results!")
+              next
+            else
+              tbl = Rex::Text::Table.new(
+                'Header' => "#{query['name']} Dump of #{peer}",
+                'Indent' => 1,
+                'Columns' => columns
+              )
+              entries.each do |entry|
+                data = []
+                columns.each do |col|
+                  col = col.to_sym
+                  if entry[col].nil? || entry[col].empty? || entry[col][0].empty?
+                    data << ''
+                  else
+                    data << entry[col].join(' || ')
+                  end
+                end
+                tbl << data
+              end
+              print_status(tbl.to_s)
+            end
+          end
+          return
 
         # Many of the following queries came from http://www.ldapexplorer.com/en/manual/109050000-famous-filters.htm. All credit goes to them for these popular queries.
         when 'ENUM_ALL_OBJECTCLASS'
           filter = Net::LDAP::Filter.construct('(objectClass=*)') # Get ALL of the objects that have any objectClass associated with them. Can return a lot of info.
           entries = perform_ldap_query(ldap, filter)
-          columns = ['dn', 'objectClass', 'objectGUID']
+          columns = ['dn', 'objectClass']
 
         when 'ENUM_ALL_OBJECTCATEGORY'
           filter = Net::LDAP::Filter.construct('(objectCategory=*)') # Get ALL of the objects that have any objectCategory associated with them. Can return a lot of info.
@@ -143,22 +199,22 @@ class MetasploitModule < Msf::Auxiliary
           # Find AD accounts and organizational people.
           filter = Net::LDAP::Filter.construct('(|(objectClass=organizationalPerson)(sAMAccountType=805306368))')
           entries = perform_ldap_query(ldap, filter)
-          columns = ['dn', 'name', 'displayname', 'givenname', 'samaccountname', 'useraccountcontrol']
+          columns = ['dn', 'name', 'displayname', 'samaccountname', 'userprincipalname', 'useraccountcontrol', 'homeDirectory', 'homeDrive', 'profilePath']
 
         when 'ENUM_COMPUTERS'
           filter = Net::LDAP::Filter.construct('(objectCategory=Computer)') # Find computers
           entries = perform_ldap_query(ldap, filter)
-          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenname', 'name', 'operatingsystemversion']
+          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenName', 'name', 'operatingSystemVersion', 'operatingSystemServicePack']
 
         when 'ENUM_DOMAIN_CONTROLERS'
           filter = Net::LDAP::Filter.construct('(&(objectCategory=Computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))') # Find domain controllers
           entries = perform_ldap_query(ldap, filter)
-          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenname', 'name', 'operatingsystemversion']
+          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenName', 'name', 'operatingSystemVersion']
 
         when 'ENUM_EXCHANGE_SERVERS'
           filter = Net::LDAP::Filter.construct('(&(objectClass=msExchExchangeServer)(!(objectClass=msExchExchangeServerPolicy)))') # Find Exchange Servers
           entries = perform_ldap_query(ldap, filter)
-          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenname', 'name', 'operatingsystemversion']
+          columns = ['dn', 'displayname', 'distinguishedname', 'dnshostname', 'description', 'givenName', 'name', 'operatingSystemVersion']
 
         when 'ENUM_EXCHANGE_RECIPIENTS'
           # Find Exchange Recipients with or without fax addresses.
@@ -171,7 +227,7 @@ class MetasploitModule < Msf::Auxiliary
           # Filters combined to remove duplicates.
           filter = Net::LDAP::Filter.construct('(|(objectClass=group)(objectClass=groupOfNames)(groupType:1.2.840.113556.1.4.803:=2147483648)(objectClass=posixGroup))')
           entries = perform_ldap_query(ldap, filter)
-          columns = ['dn', 'name', 'grouptype', 'memberof']
+          columns = ['dn', 'name', 'groupType', 'memberof']
 
         when 'ENUM_ORGUNITS'
           filter = Net::LDAP::Filter.construct('(objectClass=organizationalUnit)') # Find OUs aka Organizational Units
@@ -200,13 +256,13 @@ class MetasploitModule < Msf::Auxiliary
       columns.each do |col|
         col = col.to_sym
         if entry[col].nil? || entry[col].empty? || entry[col][0].empty?
-          data << nil
+          data << ''
         else
           data << entry[col].join(' || ')
         end
       end
       tbl << data
     end
-    print_status(tbl.to_s)
+    #print_status(tbl.to_s)
   end
 end
