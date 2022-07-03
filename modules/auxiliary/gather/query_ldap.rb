@@ -124,7 +124,7 @@ class MetasploitModule < Msf::Auxiliary
     print_status(result)
   end
 
-  def perform_multiple_ldap_queries_from_parsed_file(ldap, parsed_file)
+  def perform_multiple_queries_from_file(ldap, parsed_file)
     parsed_file['queries'].each do |query|
       unless query['name'] && query['filter'] && query['columns']
         print_error("Each query in the query file must at least contain a 'name', 'filter' and 'columns' attribute!")
@@ -139,8 +139,7 @@ class MetasploitModule < Msf::Auxiliary
       print_status("Running #{query['name']}...")
       entries = perform_ldap_query(ldap, filter)
 
-      if entries.nil?
-        print_warning("Query #{query['filter']} from #{query['name']} didn't return any results!")
+      if entries.nil? print_warning("Query #{query['filter']} from #{query['name']} didn't return any results!")
         next
       end
 
@@ -210,7 +209,7 @@ class MetasploitModule < Msf::Auxiliary
             print_error("No queries supplied in #{datastore['QUERY_FILE_PATH']}!")
           end
 
-          perform_multiple_ldap_queries_from_parsed_file(ldap, parsed_file)
+          perform_multiple_queries_fom_file(ldap, parsed_file)
           return
 
         # Many of the following queries came from http://www.ldapexplorer.com/en/manual/109050000-famous-filters.htm. All credit goes to them for these popular queries.
