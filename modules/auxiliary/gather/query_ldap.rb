@@ -242,11 +242,11 @@ class MetasploitModule < Msf::Auxiliary
           filter_string = nil
           columns = nil
           for entry in @default_settings['queries'] do
-            if entry['action'] == datastore['ACTION']
-              filter_string = entry['filter']
-              columns = entry['columns']
-              break
-            end
+            next unless entry['action'] == datastore['ACTION']
+
+            filter_string = entry['filter']
+            columns = entry['columns']
+            break
           end
 
           if columns&.empty? || filter_string&.empty?
