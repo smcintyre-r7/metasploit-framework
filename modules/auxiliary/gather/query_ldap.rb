@@ -89,7 +89,7 @@ class MetasploitModule < Msf::Auxiliary
   def generate_rex_tables(entries, format)
     entries.each do |entry|
       tbl = Rex::Text::Table.new(
-        'Header' => "#{entry['dn'][0].split(',').join(' ')}",
+        'Header' => entry['dn'][0].split(',').join(' '),
         'Indent' => 1,
         'Columns' => ['Name', 'Attributes']
       )
@@ -114,12 +114,12 @@ class MetasploitModule < Msf::Auxiliary
     end
   end
 
-  def output_json_data(entries, columns)
+  def output_json_data(entries, _columns)
     entries.each do |entry|
       result = ''
       data = {}
       for attr in entry.attribute_names
-          data[attr] = entry[attr].join(' || ')
+        data[attr] = entry[attr].join(' || ')
       end
       result << JSON.pretty_generate(data) + ",\n"
       result.gsub!(/},\n$/, '}')
@@ -128,11 +128,11 @@ class MetasploitModule < Msf::Auxiliary
     end
   end
 
-  def output_data_table(entries, columns)
+  def output_data_table(entries, _columns)
     generate_rex_tables(entries, 'table')
   end
 
-  def output_data_csv(entries, columns)
+  def output_data_csv(entries, _columns)
     generate_rex_tables(entries, 'csv')
   end
 
