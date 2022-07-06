@@ -20,7 +20,7 @@ class MetasploitModule < Msf::Auxiliary
 
     begin
       @default_settings_file_path = user_config_file
-      @default_settings = YAML.safe_load_file(@default_settings_file_path)
+      @default_settings = YAML.safe_load(File.binread(@default_settings_file_path))
     rescue StandardError => e
       print_error("Couldn't parse #{@default_settings_file_path}, error was: #{e}")
       return
@@ -233,7 +233,7 @@ class MetasploitModule < Msf::Auxiliary
           print_status("Loading queries from #{datastore['QUERY_FILE_PATH']}...")
 
           begin
-            parsed_file = YAML.safe_load_file(datastore['QUERY_FILE_PATH'])
+            parsed_file = YAML.safe_load(File.read(datastore['QUERY_FILE_PATH']))
           rescue StandardError => e
             print_error("Couldn't parse #{datastore['QUERY_FILE_PATH']}, error was: #{e}")
             return
