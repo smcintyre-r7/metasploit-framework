@@ -46,7 +46,7 @@ class MetasploitModule < Msf::Auxiliary
     end
     actions << ['RUN_QUERY_FILE', { 'Description' => 'Execute a custom set of LDAP queries from the JSON or YAML file specified by QUERY_FILE.' }]
     actions.sort!
-    
+
     default_action = 'RUN_QUERY_FILE'
     if actions.length > 1 # Aka there is more than just RUN_QUERY_FILE in the list...
       default_action = actions[0][0] # Get the first entry's action name and set this as the default action.
