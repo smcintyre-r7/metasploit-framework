@@ -1,8 +1,8 @@
 ## Vulnerable Application
 This module allows users to query an LDAP server using either a custom LDAP query, or
-a set of LDAP queries under a specific category. Users can also specify a JSON or 
-YAML file containing custom queries to be executed using the RUN_QUERY_FILE action. 
-If this action is specified, then `QUERY_FILE_PATH` must be a path to the 
+a set of LDAP queries under a specific category. Users can also specify a JSON or
+YAML file containing custom queries to be executed using the RUN_QUERY_FILE action.
+If this action is specified, then `QUERY_FILE_PATH` must be a path to the
 location of this JSON/YAML file on disk.
 
 Alternatively one can run one of several predefined queries by setting ACTION to the
@@ -19,6 +19,42 @@ separating multiple items within one column.
 4. Optional: `set RPORT <target port>` if target port is non-default.
 5: Optional: `set SSL true` if the target port is SSL enabled.
 6: Do: `run`
+
+## Options
+
+### OUTPUT_FORMAT
+The output format to use. Can be either `csv`, `table` or `json` for
+CSV, Rex table output, or JSON output respectively.
+
+### BASE_DN
+The LDAP base DN if already obtained. If not supplied, the module will
+automatically attempt to find the base DN for the target LDAP server.
+
+### QUERY_FILE_PATH
+If the `ACTION` is set to `RUN_QUERY_FILE`, then this option is required and
+must be set to the full path to the JSON or YAML file containing the queries to
+be run.
+
+The file format must follow the following convention:
+
+```
+queries:
+  - action: THE ACTION NAME
+    description: "THE ACTION DESCRIPTION"
+    filter: "THE LDAP FILTER"
+    attributes:
+      - dn
+      - displayName
+      - name
+      - description
+```
+
+Where `queries` is an array of queries to be run, each containing an `action` field
+containing the name of the action to be run, a `description` field describing the
+action, a `filter` field containing the filter to send to the LDAP server
+(aka what to search on), and the list of attributes that we are interested in from
+the results as an array.
+
 
 ## Scenarios
 
@@ -56,7 +92,7 @@ queries:
       - memberof
 ```
 
-Here is the results of using this file with the `RUN_QUERY_FILE` action which will 
+Here is the results of using this file with the `RUN_QUERY_FILE` action which will
 run all queries within the file one after another.
 
 ```
