@@ -160,7 +160,7 @@ msf6 auxiliary(gather/ldap_query) >
 Here is the sample query file we will be using:
 
 ```
- ~/git/metasploit-framework │ ldap-changes !1 ?23  cat test.yaml                                                  ✔ │ 3.0.2 Ruby 
+$ cat test.yaml
 ---
 queries:
   - action: ENUM_USERS

@@ -10,46 +10,7 @@ class MetasploitModule < Msf::Auxiliary
   require 'yaml'
 
   def initialize(info = {})
-    filename = 'ldap_queries_default.yaml'
-    user_config_file = File.join(::Msf::Config.get_config_root.to_s, filename)
-    unless File.exist?(user_config_file)
-      # If the user config file doesn't exist, then initialize it with the contents of the default one.
-      default_config_file = File.join(::Msf::Config.data_directory, 'auxiliary', 'gather', 'ldap_query', filename)
-      FileUtils.cp(default_config_file, user_config_file)
-    end
-
-    begin
-      @default_settings_file_path = user_config_file
-      @default_settings = YAML.safe_load(File.binread(@default_settings_file_path))
-    rescue StandardError => e
-      fail_with(Failure::BadConfig, "Couldn't parse #{@default_settings_file_path}, error was: #{e}")
-    end
-
-    unless @default_settings['queries']&.class == Array && !@default_settings['queries'].empty?
-      fail_with(Failure::BadConfig, "No queries supplied in #{@default_settings_file_path}!")
-    end
-
-    actions = []
-    @default_settings['queries'].each do |entry|
-      if entry['action'].nil? || entry['description'].nil?
-        if entry['action'].nil?
-          print_warning("Entry detected that was missing its 'action' and 'description' fields!")
-        else
-          print_warning("#{entry['Action']} is missing its 'description' field!")
-        end
-        print_warning("Please check the file at #{@default_settings_file_path} and fix the errors listed above!")
-        next
-      end
-      actions << [entry['action'], { 'Description' => entry['description'] }]
-    end
-    actions << ['RUN_QUERY_FILE', { 'Description' => 'Execute a custom set of LDAP queries from the JSON or YAML file specified by QUERY_FILE.' }]
-    actions << ['RUN_SINGLE_QUERY', { 'Description' => 'Execute a single LDAP query using the QUERY_FILTER and QUERY_ATTRIBUTES options.' }]
-    actions.sort!
-
-    default_action = 'RUN_QUERY_FILE'
-    if actions.length > 2 # Aka there is more than just RUN_QUERY_FILE and RUN_SINGLE_QUERY in the list...
-      default_action = actions[0][0] # Get the first entry's action name and set this as the default action.
-    end
+    actions, default_action = initialize_actions
 
     super(
       update_info(
@@ -103,6 +64,50 @@ class MetasploitModule < Msf::Auxiliary
       OptString.new('QUERY_FILTER', [false, 'Filter to send to the target LDAP server to perform the query'], conditions: %w[ACTION == RUN_SINGLE_QUERY]),
       OptString.new('QUERY_ATTRIBUTES', [false, 'Comma seperated list of attributes to retrieve from the server'], conditions: %w[ACTION == RUN_SINGLE_QUERY])
     ])
+  end
+
+  def initialize_actions
+    filename = 'ldap_queries_default.yaml'
+    user_config_file = File.join(::Msf::Config.get_config_root.to_s, filename)
+    unless File.exist?(user_config_file)
+      # If the user config file doesn't exist, then initialize it with the contents of the default one.
+      default_config_file = File.join(::Msf::Config.data_directory, 'auxiliary', 'gather', 'ldap_query', filename)
+      FileUtils.cp(default_config_file, user_config_file)
+    end
+
+    begin
+      @default_settings_file_path = user_config_file
+      @default_settings = YAML.safe_load(File.binread(@default_settings_file_path))
+    rescue StandardError => e
+      fail_with(Failure::BadConfig, "Couldn't parse #{@default_settings_file_path}, error was: #{e}")
+    end
+
+    unless @default_settings['queries']&.class == Array && !@default_settings['queries'].empty?
+      fail_with(Failure::BadConfig, "No queries supplied in #{@default_settings_file_path}!")
+    end
+
+    actions = []
+    @default_settings['queries'].each do |entry|
+      if entry['action'].nil? || entry['description'].nil?
+        if entry['action'].nil?
+          print_warning("Entry detected that was missing its 'action' and 'description' fields!")
+        else
+          print_warning("#{entry['Action']} is missing its 'description' field!")
+        end
+        print_warning("Please check the file at #{@default_settings_file_path} and fix the errors listed above!")
+        next
+      end
+      actions << [entry['action'], { 'Description' => entry['description'] }]
+    end
+    actions << ['RUN_QUERY_FILE', { 'Description' => 'Execute a custom set of LDAP queries from the JSON or YAML file specified by QUERY_FILE.' }]
+    actions << ['RUN_SINGLE_QUERY', { 'Description' => 'Execute a single LDAP query using the QUERY_FILTER and QUERY_ATTRIBUTES options.' }]
+    actions.sort!
+
+    default_action = 'RUN_QUERY_FILE'
+    if actions.length > 2 # Aka there is more than just RUN_QUERY_FILE and RUN_SINGLE_QUERY in the list...
+      default_action = actions[0][0] # Get the first entry's action name and set this as the default action.
+    end
+    return actions, default_action
   end
 
   def perform_ldap_query(ldap, filter, attributes)
