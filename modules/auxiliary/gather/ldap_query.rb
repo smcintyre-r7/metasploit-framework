@@ -70,18 +70,18 @@ class MetasploitModule < Msf::Auxiliary
     filename = 'ldap_queries_default.yaml'
     @user_config_file_path = File.join(::Msf::Config.get_config_root.to_s, filename)
     default_config_file_path = File.join(::Msf::Config.data_directory, 'auxiliary', 'gather', 'ldap_query', filename)
-    require 'pry'; binding.pry
+
     unless File.exist?(@user_config_file_path)
       # If the user config file doesn't exist, then initialize it with a sample entry.
       # Users can adjust this file to overwrite default actions to retrieve different attributes etc by default.
-      content = """---
+      content = "---
 queries:
   - action: SAMPLE_ACTION
     description: 'A description.'
     filter: '(objectClass=*)'
     attributes:
       - dn
-      - objectClass"""
+      - objectClass"
       File.write(@user_config_file_path, content)
     end
 
@@ -122,6 +122,7 @@ queries:
         next
       end
       next if entry['action'] == 'SAMPLE_ACTION' # Skip the sample action in the file.
+
       actions << [entry['action'], { 'Description' => entry['description'] }]
     end
     actions << ['RUN_QUERY_FILE', { 'Description' => 'Execute a custom set of LDAP queries from the JSON or YAML file specified by QUERY_FILE.' }]
