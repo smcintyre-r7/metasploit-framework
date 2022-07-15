@@ -70,9 +70,14 @@ class MetasploitModule < Msf::Auxiliary
     user_config_file_path = File.join(::Msf::Config.get_config_root, 'ldap_queries.yaml')
     default_config_file_path = File.join(::Msf::Config.data_directory, 'auxiliary', 'gather', 'ldap_query', 'ldap_queries_default.yaml')
 
+    unless File.exist?(default_config_file_path)
+      print_error("The file #{default_config_file_path} should exist but does not! Check your setup!")
+      return
+    end
+
     @loaded_queries = safe_load_queries(default_config_file_path) || []
     if File.exist?(user_config_file_path)
-      @loaded_queries.concat(safe_load_queries(user_config_file_path))
+      @loaded_queries.concat(safe_load_queries(user_config_file_path) || [])
     else
       # If the user config file doesn't exist, then initialize it with a sample entry.
       # Users can adjust this file to overwrite default actions to retrieve different attributes etc by default.
@@ -83,7 +88,7 @@ class MetasploitModule < Msf::Auxiliary
     # Combine the user settings with the default settings and then uniq them such that we only have one copy
     # of each ACTION, however we use the user's custom settings if they have tweaked anything to prevent overriding
     # their custom adjustments.
-    @loaded_queries = Hash[*@loaded_queries.map { |h| [h['action'], h] }.flatten]
+    @loaded_queries = @loaded_queries.map { |h| [h['action'], h] }.to_h
     @loaded_queries.select! do |_, entry|
       if entry['action'].blank?
         wlog('ldap query entry detected that was missing its action field')
@@ -117,7 +122,7 @@ class MetasploitModule < Msf::Auxiliary
     actions.sort!
 
     default_action = 'RUN_QUERY_FILE'
-    unless @loaded_queries.empty? # Aka there is more than just RUN_QUERY_FILE and RUN_SINGLE_QUERY in the list...
+    unless @loaded_queries.empty? # Aka there is more than just RUN_QUERY_FILE and RUN_SINGLE_QUERY in the actions list...
       default_action = actions[0][0] # Get the first entry's action name and set this as the default action.
     end
     return actions, default_action
@@ -125,6 +130,10 @@ class MetasploitModule < Msf::Auxiliary
 
   def safe_load_queries(filename)
     begin
+      unless File.exist?(filename)
+        elog("File #{filename} dpoesn't exist on disk!")
+        return
+      end
       settings = YAML.safe_load(File.binread(filename))
     rescue StandardError => e
       elog("Couldn't parse #{filename}", error: e)
@@ -312,7 +321,12 @@ class MetasploitModule < Msf::Auxiliary
           query = @loaded_queries[datastore['ACTION']]
           fail_with(Failure::BadConfig, "Invalid action: #{datastore['ACTION']}") unless query
 
-          filter = Net::LDAP::Filter.construct(query['filter'])
+          begin
+            filter = Net::LDAP::Filter.construct(query['filter'])
+          rescue StandardError => e
+            fail_with(Failure::BadConfig, "Could not compile the filter #{query['filter']}. Error was #{e}")
+          end
+
           entries = perform_ldap_query(ldap, filter, query['attributes'])
         end
       end
