@@ -11,7 +11,7 @@ class Msf::Sessions::PowerShell < Msf::Sessions::CommandShell
       endm = Rex::Text.rand_text_alpha(15)
 
       # Send the shell channel's stdin.
-      shell_write(";'#{strm}'\n" + cmd + "\n'#{endm}';\n")
+      shell_write(";\n'#{strm}'\n" + cmd + "\n'#{endm}';\n")
 
       etime = ::Time.now.to_f + timeout
 

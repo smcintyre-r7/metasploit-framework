@@ -101,7 +101,7 @@ module Rex::Proto::Http::WebSocket::AmazonSsm
       end
 
       def strip_shell_clr(tty_out)
-        tty_out.gsub(/\x1B\[(;?[0-9]{1,3})+[mGK]/,'')
+        tty_out.gsub(/\x1B\[([;?]?[0-9]{1,3})+[ABCDEFGlhmK]/,'')
       end
 
       def strip_shell_fmt(tty_out)
@@ -118,16 +118,21 @@ module Rex::Proto::Http::WebSocket::AmazonSsm
           return nil
         end
 
-        payload_data = output_frame.payload_data.value
+        output_lines = []
+        output_frame.payload_data.value.split("\n").each do |line|
+          line = strip_shell_fmt(line) if @filter_text
 
+          if @filter_echo.present? && line.strip.end_with?(@filter_echo.first)
+            @filter_echo.shift
+            next
+          end
 
-        if @filter_echo.is_a?(String) and payload_data.strip == @filter_echo.strip
-          dlog("SsmChannel: filtering output #{@filter_echo}")
-          @filter_echo = true
-          return nil
+          output_lines << line
         end
 
-        @filter_text ? strip_shell_fmt(payload_data) : payload_data
+        return nil if output_lines.empty?
+
+        output_lines.join("\n")
       end
 
       def handle_acknowledge(ack_frame)
@@ -170,7 +175,7 @@ module Rex::Proto::Http::WebSocket::AmazonSsm
         @out_seq_num = 0
         @run_ssm_pub = true
         @ack_message = nil
-        @filter_echo = filter_echo
+        @filter_echo = filter_echo ? [] : nil
         @filter_text = filter_text
         @publication = false
 
@@ -215,7 +220,8 @@ module Rex::Proto::Http::WebSocket::AmazonSsm
 
       def on_data_write(data)
         start_publication if not @publication
-        @filter_echo = data if @filter_echo and data.is_a?(String)
+
+        @filter_echo += data.split("\n").map(&:strip) if @filter_echo && data.is_a?(String)
         frame = SsmFrame.create(data)
         frame.header.sequence_number = @out_seq_num
         @out_seq_num += 1
