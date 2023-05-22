@@ -43,7 +43,7 @@ module Msf::Sessions
           @session_type = 'shell'
         when 'Windows'
           @platform = 'windows'
-          @session_type = 'powershell'
+          @session_type = 'powershell:winpty'
           extend(Msf::Sessions::PowerShell::Mixin)
         end
 
