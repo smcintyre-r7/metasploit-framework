@@ -90,8 +90,9 @@ class MetasploitModule < Msf::Auxiliary
       }
     end
 
+    inv_params[:max_results] = datastore['LIMIT'] if datastore['LIMIT']
+
     ssm_ec2 = client.get_inventory(inv_params).entities.map { |e| e.data['AWS:InstanceInformation'].content }.flatten
-    ssm_ec2 = ssm_ec2[0...datastore['LIMIT']] if datastore['LIMIT']
     ssm_ec2.each do |ssm_host|
       report_host(
         host: ssm_host['IpAddress'],
