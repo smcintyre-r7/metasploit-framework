@@ -45,7 +45,7 @@ class MetasploitModule < Msf::Auxiliary
       [
         OptInt.new('LIMIT', [false, 'Only return the specified number of results from each region']),
         OptString.new('FILTER_EC2_ID', [false, 'Look for specific EC2 instance ID']),
-        OptString.new('REGION', [true, 'AWS Region (eg. "us-west-2")']),
+        OptString.new('REGION', [true, 'AWS Region (e.g. "us-west-2")']),
         OptString.new('ACCESS_KEY_ID', [true, 'AWS Access Key ID (eg. "AKIAXXXXXXXXXXXXXXXX")', '']),
         OptString.new('SECRET_ACCESS_KEY', [true, 'AWS Secret Access Key (eg. "CA1+XXXXXXXXXXXXXXXXXXXXXX6aYDHHCBuLuV79")', ''])
       ]
