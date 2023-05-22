@@ -10,8 +10,11 @@ class Msf::Sessions::PowerShell < Msf::Sessions::CommandShell
       strm = Rex::Text.rand_text_alpha(15)
       endm = Rex::Text.rand_text_alpha(15)
 
+      waiting_for = :prompt
+
       # Send the shell channel's stdin.
-      shell_write(";\n'#{strm}'\n" + cmd + "\n'#{endm}';\n")
+      shell_write(";\n")
+      cmd_lines = cmd.split("\n") # todo: need to track and handle a continuation prompt
 
       etime = ::Time.now.to_f + timeout
 
@@ -23,15 +26,25 @@ class Msf::Sessions::PowerShell < Msf::Sessions::CommandShell
 
         timeout = etime - ::Time.now.to_f
 
-        buff << res
-        next unless buff.include?(endm)
+        next unless res.rstrip =~ (/\r?PS PROMPT1MARKER2_QXuVY >$/)
 
-        # if you see the end marker, read the buffer from the start marker to the end and then display back to screen
-        buff = buff.split(/#{strm}\r\n/)[-1]
-        buff = buff.split(endm)[0]
-        buff.gsub!(/(?<=\r\n)PS [^>]*>/, '')
-        return buff
+        if waiting_for == :prompt
+          buff = ''
+          shell_write(cmd_lines.shift + "\n")
+          waiting_for = :output
+        elsif waiting_for == :output
+          res.delete_suffix!("PS PROMPT1MARKER2_QXuVY >")
+          res.delete_suffix!("\r")
+          buff << res
+          unless cmd_lines.empty?
+            shell_write(cmd_lines.shift + "\n")
+            next
+          end
+
+          break
+        end
       end
+
       buff
     end
   end

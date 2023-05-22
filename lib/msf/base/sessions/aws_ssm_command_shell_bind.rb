@@ -60,6 +60,9 @@ module Msf::Sessions
         # The session from SSM-SessionManagerRunShell starts with a TTY which breaks the post API so change the settings
         # and make it behave in a way consistent with other shell sessions
         shell_command('stty -echo cbreak;pipe=$(mktemp -u);mkfifo -m 600 $pipe;cat $pipe & sh 1>$pipe 2>$pipe')
+      elsif @platform == 'windows'
+        shell_write('function prompt { "PS PROMPT1MARKER2_QXuVY >" }')
+        shell_read(-1, 3)
       end
 
       super

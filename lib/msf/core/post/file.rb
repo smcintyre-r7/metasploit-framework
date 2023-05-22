@@ -50,6 +50,8 @@ module Msf::Post::File
       session.fs.dir.chdir(e_path)
     elsif session.type == 'powershell'
       cmd_exec("Set-Location -Path \"#{e_path}\"")
+      # keep the values synced https://github.com/PowerShell/PowerShell/issues/10278
+      cmd_exec("[System.IO.Directory]::SetCurrentDirectory($(Get-Location))")
     else
       session.shell_command_token("cd \"#{e_path}\"")
     end
@@ -712,7 +714,7 @@ module Msf::Post::File
 
   def _write_file_powershell(file_name, data, append = false)
     offset = 0
-    chunk_size = 16256
+    chunk_size = 1337 # 16256
     loop do
       _write_file_powershell_fragment(file_name, data, offset, chunk_size, append)
       offset += chunk_size + 1
@@ -731,7 +733,7 @@ module Msf::Post::File
       file_mode = 'Create'
     end
     pwsh_code = <<~PSH
-      $encoded='#{encoded_chunk}';
+      $encoded='#{encoded_chunk}'
       $gzip_bytes=[System.Convert]::FromBase64String($encoded);
       $mstream = New-Object System.IO.MemoryStream(,$gzip_bytes);
       $gzipstream = New-Object System.IO.Compression.GzipStream $mstream, ([System.IO.Compression.CompressionMode]::Decompress);

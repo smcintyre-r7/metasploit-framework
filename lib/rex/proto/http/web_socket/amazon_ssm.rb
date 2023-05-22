@@ -101,16 +101,17 @@ module Rex::Proto::Http::WebSocket::AmazonSsm
       end
 
       def strip_shell_clr(tty_out)
-        tty_out.gsub(/\x1B\[([;?]?[0-9]{1,3})+[ABCDEFGlhmK]/,'')
+        tty_out.gsub(/\x1B\[([;?]?[0-9]{1,3})+[ABCDEFGlhmK]/, '')
       end
 
       def strip_shell_fmt(tty_out)
-        strip_shell_clr(tty_out).gsub(/^\e.+;.*\a/,'')
+        strip_shell_clr(tty_out)#.gsub(/^\e.+;.*\a/, '')
       end
 
       def handle_output_data(output_frame)
         return nil if @ack_message == output_frame.uuid
 
+        line_break = "\r\n"
         @ack_message = acknowledge_output(output_frame)
         # TODO: handle Payload::* types
         if ![PayloadType::Output, PayloadType::Error].any? { |e| e == output_frame.payload_type }
@@ -119,20 +120,31 @@ module Rex::Proto::Http::WebSocket::AmazonSsm
         end
 
         output_lines = []
-        output_frame.payload_data.value.split("\n").each do |line|
-          line = strip_shell_fmt(line) if @filter_text
-
-          if @filter_echo.present? && line.strip.end_with?(@filter_echo.first)
-            @filter_echo.shift
-            next
+        output_data = output_frame.payload_data.value
+        output_data = strip_shell_fmt(output_data) if @filter_text
+        output_data = @output_buffer + output_data if @output_buffer
+        @output_buffer = nil
+        output_data = output_data.split(line_break)
+        output_data.each_with_index do |line, index|
+          line = @output_buffer + line if @output_buffer
+          if @filter_echo.present? && (overlap = string_overlap(line.rstrip, @filter_echo.first))
+            if overlap == @filter_echo.first.length
+              @filter_echo.shift
+              next
+            else
+              @output_buffer = line
+              break if index == output_data.length - 1 # check if this is the last chunk and if it is buffer it
+            end
           end
+
+          next if line.empty?
 
           output_lines << line
         end
 
         return nil if output_lines.empty?
 
-        output_lines.join("\n")
+        output_lines.join(line_break)
       end
 
       def handle_acknowledge(ack_frame)
@@ -147,7 +159,7 @@ module Rex::Proto::Http::WebSocket::AmazonSsm
       end
 
       def update_term_size
-        return unless ::IO.console
+        return set_term_size(500, 200) unless ::IO.console
 
         rows, cols = ::IO.console.winsize
         unless rows == self.rows && cols == self.cols
@@ -162,6 +174,15 @@ module Rex::Proto::Http::WebSocket::AmazonSsm
         frame = SsmFrame.create(data)
         frame.payload_type = PayloadType::Size
         @websocket.put_wsbinary(frame.to_binary_s)
+      end
+
+      private
+
+      # Get the number of characters that overlap between the end of the first string and the start of the second. Nil
+      # is returned if no characters overlap.
+      def string_overlap(first, second)
+        length = [first.length, second.length].min
+        length.downto(1).find { |cursor| first[-cursor...] == second[0...cursor] }
       end
     end
 
