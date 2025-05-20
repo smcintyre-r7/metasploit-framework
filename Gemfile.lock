@@ -48,6 +48,7 @@ PATH
       metasploit-payloads (= 2.0.191)
       metasploit_data_models (>= 6.0.7)
       metasploit_payloads-mettle (= 1.0.35)
+      mini_portile2 (= 2.8.8)
       mqtt
       msgpack (~> 1.6.0)
       mutex_m
@@ -59,7 +60,7 @@ PATH
       net-ssh
       network_interface
       nexpose
-      nokogiri
+      nokogiri (= 1.18.8)
       octokit (~> 4.0)
       openssl-ccm
       openvas-omp
@@ -368,7 +369,7 @@ GEM
     network_interface (0.0.4)
     nexpose (7.3.0)
     nio4r (2.7.4)
-    nokogiri (1.18.3)
+    nokogiri (1.18.8)
       mini_portile2 (~> 2.8.2)
       racc (~> 1.4)
     nori (2.7.1)

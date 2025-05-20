@@ -85,7 +85,9 @@ Gem::Specification.new do |spec|
   # NTLM authentication
   spec.add_runtime_dependency 'rubyntlm'
   # Needed by for XML parsing
-  spec.add_runtime_dependency 'nokogiri'
+  spec.add_runtime_dependency 'nokogiri', '1.18.8'
+  # Temporary need for nokogiri compilation
+  spec.add_runtime_dependency 'mini_portile2', '2.8.8'
   # Needed by db.rb and Msf::Exploit::Capture
   spec.add_runtime_dependency 'packetfu'
   # For sniffer and raw socket modules
