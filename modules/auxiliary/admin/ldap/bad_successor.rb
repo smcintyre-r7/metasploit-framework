@@ -228,9 +228,11 @@ class MetasploitModule < Msf::Auxiliary
 
     attrs_to_copy.each do |key, value|
       if value.is_a?(Array)
-        print_status("#{key} => [#{value.map(&:inspect).join(', ')}]")
-      else
-        print_status("#{key} => #{value.inspect}")
+        if value.length == 1
+          print_status("#{key} => #{value.first.inspect}")
+        else
+          print_status("#{key} => [#{value.map(&:inspect).join(', ')}]")
+        end
       end
     end
   end
