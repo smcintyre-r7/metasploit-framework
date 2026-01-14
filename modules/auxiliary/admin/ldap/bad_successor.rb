@@ -92,11 +92,7 @@ class MetasploitModule < Msf::Auxiliary
       end
       @ldap = ldap
 
-      begin
-        return Exploit::CheckCode::Safe unless windows_version_vulnerable?
-      rescue Net::LDAP::Error => e
-        return Exploit::CheckCode::Unknown(e.message)
-      end
+      return Exploit::CheckCode::Safe unless windows_version_vulnerable?
 
       ous = get_ous_we_can_write_to
       if ous.blank?
@@ -110,6 +106,10 @@ class MetasploitModule < Msf::Auxiliary
 
       Exploit::CheckCode::Appears
     end
+  rescue Errno::ECONNRESET
+    return Exploit::CheckCode::Unknown('The connection was reset')
+  rescue Rex::ConnectionError, Net::LDAP::Error => e
+    return Exploit::CheckCode::Unknown(e.message)
   end
 
   def get_ous_we_can_write_to
@@ -375,5 +375,13 @@ class MetasploitModule < Msf::Auxiliary
 
   def run
     send("action_#{action.name.downcase}")
+  rescue Errno::ECONNRESET
+    fail_with(Failure::Disconnected, 'The connection was reset.')
+  rescue Rex::ConnectionError => e
+    fail_with(Failure::Unreachable, e.message)
+  rescue Rex::Proto::Kerberos::Model::Error::KerberosError => e
+    fail_with(Failure::NoAccess, e.message)
+  rescue Net::LDAP::Error => e
+    fail_with(Failure::Unknown, "#{e.class}: #{e.message}")
   end
 end
