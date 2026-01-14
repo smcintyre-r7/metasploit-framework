@@ -6,7 +6,7 @@ module Rex
       module Model
         # This class provides a representation of the S4UUserID structure
         # as defined in the Kerberos protocol.
-        class S4UUserID < Element
+        class S4uUserId < Element
           # @!attribute nonce
           #   @return [Integer] The nonce in KDC-REQ-BODY
           attr_accessor :nonce

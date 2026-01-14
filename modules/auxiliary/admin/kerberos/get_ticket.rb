@@ -223,7 +223,7 @@ class MetasploitModule < Msf::Auxiliary
         impersonate: datastore['IMPERSONATE'],
         impersonate_type: datastore['IMPERSONATE_TYPE']
       }
-      tgs_ticket, tgs_auth, ticket_path = authenticator.s4u2self(
+      tgs_ticket, tgs_auth, tgs_credential = authenticator.s4u2self(
         credential,
         auth_options.merge(ticket_storage: kerberos_ticket_storage(read: false, write: true))
       )
@@ -239,7 +239,7 @@ class MetasploitModule < Msf::Auxiliary
       end
 
       auth_options[:tgs_ticket] = tgs_ticket
-      auth_options[:path] = ticket_path
+      auth_options[:credential] = tgs_credential
       auth_options
     elsif datastore['IMPERSONATE_TYPE'] == 'generic'
       print_status("#{peer} - Getting TGS impersonating #{datastore['IMPERSONATE']}@#{@realm} (SPN: #{datastore['SPN']})")
