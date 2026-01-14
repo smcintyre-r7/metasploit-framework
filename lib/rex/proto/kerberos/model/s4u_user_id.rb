@@ -36,7 +36,6 @@ module Rex
 
 
           def initialize(name, impersonate_type, realm, nonce)
-            puts 'tessttdddsst'
             self.nonce = nonce
             # Set cname name_type based on dMSA flag
             self.cname = Rex::Proto::Kerberos::Model::PrincipalName.new(
