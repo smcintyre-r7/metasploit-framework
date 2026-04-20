@@ -3,6 +3,11 @@
 require 'msf/core/mcp'
 require 'optparse'
 
+# Top-level include so the Kernel-level dlog/ilog/elog helpers defined by
+# rex/logging/log_dispatcher can resolve their bare LOG_* constants when
+# msfmcpd is loaded without the full framework.
+include Rex::Logging
+
 module Msf::MCP
   # Main application class that orchestrates the MCP server startup and lifecycle
   class Application

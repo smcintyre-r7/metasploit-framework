@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require 'rex/logging'
+require 'rex/socket'
 require 'rex/logging/log_sink'
+require 'rex/logging/sinks/stream'
 require 'rex/logging/sinks/flatfile'
 require 'rex/logging/sinks/stderr'
 
@@ -9,7 +11,7 @@ require 'rex/logging/sinks/stderr'
 module Msf
   module MCP
     VERSION = '0.1.0'
-    LOG_SOURCE = 'msfmcp'
+    LOG_SOURCE = 'mcp'
   end
 end
 
