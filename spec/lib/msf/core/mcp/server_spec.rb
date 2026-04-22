@@ -528,7 +528,7 @@ RSpec.describe Msf::MCP::Server do
         content = File.read(log_file)
         expect(content).to match(/\[i\(\d\)\]/)
         expect(content).to include('HTTP Request: tools/call (id: 42)')
-        expect(content).to include('"name"=>"test"')
+        expect(content).to match(/"name"\s?=>\s?"test"/)
       end
 
       it 'logs a warning for invalid JSON in POST body' do
